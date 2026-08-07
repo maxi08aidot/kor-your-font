@@ -10,4 +10,5 @@ module.exports = {
   ...require('./preview'),
   ...require('./template'),
   ...require('./charsets'),
+  ...require('./hangul'),
 };

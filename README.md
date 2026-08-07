@@ -4,6 +4,9 @@
 
 Draw your alphabet on paper. Take a photo. Get your font.
 
+**한국어도 지원합니다.** 한글 템플릿에 초성·중성·종성 67개를 한 번씩 쓰면,
+도구가 이를 조합해 현대 한글 완성형 11,172자(`가`–`힣`)를 갖춘 폰트를 만듭니다.
+
 ![A photo of a handwritten alphabet in a spiral notebook becoming an installable font](assets/hero.png)
 
 *This is a real one-shot result: dim light, spiral binding, page shadow. One photo in, installable font out.*
@@ -46,6 +49,13 @@ npx draw-your-font make photo.jpg --chars "ABCabc" --name "My Hand"
 # best quality: print a template, fill it, photograph:
 npx draw-your-font template -o template.pdf --charset minimal   # or: spanish
 npx draw-your-font make page1.jpg page2.jpg --charset minimal --name "My Hand"
+
+# Korean: write 67 jamo over two worksheet pages, then build all 11,172 syllables
+npx draw-your-font template-korean -o korean-template.pdf
+# Open korean-template-map.txt beside the PDF, then photograph both full pages.
+npx draw-your-font segment-korean korean-page-1.jpg korean-page-2.jpg -d korean-work
+npx draw-your-font build-korean -d korean-work --labels korean-work/korean-labels.json \
+  --name "My Hangul Hand" --formats ttf,woff,woff2,css
 ```
 
 Pure npm, zero system dependencies: no FontForge, no ImageMagick, no potrace
@@ -56,14 +66,38 @@ binary. Works on macOS / Linux / Windows wherever Node ≥ 18 runs.
 | Command | What it does |
 |---|---|
 | `template` | printable A4 PDF grid (`--charset minimal\|spanish`) |
+| `template-korean` | two-page worksheet for the 67 modern Hangul components, plus a UTF-8 cell map |
 | `segment <photos…>` | find letters → crops + numbered contact sheet + `blobs.json` |
+| `segment-korean <page photos…>` | capture each known worksheet cell intact; writes `korean-labels.json` automatically |
 | `build` | labeled crops → font (`--labels` / `--chars` / `--charset`) |
+| `build-korean` | 67 traced components → every modern Hangul syllable (`가`–`힣`) |
 | `make <photos…>` | segment + build in one shot |
 | `preview` | render any text with the built font |
 
 Refinement flags: `--smooth 0..2` (rounder curves), `--weight=-2..2`
 (thinner/bolder), `--formats ttf,woff,woff2,css` (web-ready + `@font-face`
 snippet). Run `draw-your-font --help` for everything.
+
+### Korean handwriting flow
+
+Korean syllables are made from a leading consonant, vowel, and optional final
+consonant. Freeform blob detection is the wrong input model because the parts
+of a syllable may not touch. The Korean worksheet solves this by assigning one
+cell to each component: 19 leading consonants, 21 vowels, and 27 final
+consonants. `segment-korean` crops the cells, not connected ink blobs, so a
+component with separate strokes stays together.
+
+`build-korean` fits each traced component into a neutral design cell and lays
+it out in left/right or top/bottom syllable slots depending on the vowel. It
+then emits the 11,172 standard precomposed Unicode syllables. The result works
+in ordinary Korean text fields without requiring application-specific OpenType
+shaping support.
+
+For the clearest result, use a dark pen, write each component large and
+centered, keep both worksheet pages flat, and photograph the complete page
+from directly above. The initial layout is intentionally conservative; it is a
+handwriting-font generator, not a replacement for hand-tuned professional
+Korean type design.
 
 ## How it works
 

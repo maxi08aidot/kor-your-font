@@ -23,6 +23,8 @@ nothing is uploaded.
 ## Decide the flow
 
 - **User has no photo yet** → offer the template: print, write, photograph.
+- **User wants a Korean/Hangul handwriting font** → use the Korean worksheet
+  flow below; do not use freeform blob labels for syllable blocks.
 - **User shares photo(s) of handwriting** → main flow below.
 - **User pasted an image but there is no file path** → you can see it, but the
   CLI needs a file. Ask them to drag the image file into the terminal (that
@@ -47,6 +49,30 @@ light grey and vanishes during processing - only their ink survives.
 ```bash
 $DYF segment photo1.jpg photo2.jpg -d work
 ```
+
+## Korean worksheet flow
+
+Modern Hangul is produced from 67 handwritten components: 19 leading
+consonants, 21 vowels, and 27 final consonants. The CLI composes all 11,172
+modern syllables after tracing them. The user writes components, not every
+syllable.
+
+```bash
+$DYF template-korean -o korean-template.pdf
+# The command also writes korean-template-map.txt. Keep it open while writing.
+# After the user photographs both complete pages:
+$DYF segment-korean korean-page-1.jpg korean-page-2.jpg -d korean-work
+$DYF build-korean -d korean-work --labels korean-work/korean-labels.json \
+  --name "User's Hangul Hand" --formats ttf,woff,woff2,css
+```
+
+Tell the user to use a dark pen and photograph the *full* flat worksheet from
+above. `segment-korean` uses known cell positions, so disconnected strokes in
+one jamo remain one source glyph. It creates labels automatically; do not
+replace them with ordinary one-character labels. Inspect
+`korean-work/korean-preview.png` before delivery. If a component is faint or
+missing, re-shoot the relevant complete worksheet page and rerun the two
+Korean commands in a fresh work directory.
 
 **2. Look, then label.** Read `work/contact-1.png` (one per photo): every
 detected blob is numbered. This is the step where your eyes matter - check:

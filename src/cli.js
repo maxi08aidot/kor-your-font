@@ -8,12 +8,16 @@ const USAGE = `draw-your-font - turn a photo of your handwriting into a real fon
 
 Usage:
   draw-your-font template [-o template.pdf] [--charset minimal|spanish]
+  draw-your-font template-korean [-o korean-template.pdf]
   draw-your-font segment <photo...> [-d workdir] [--delta N] [--cap N]
+  draw-your-font segment-korean <page-photo...> [-d workdir] [--delta N] [--cap N]
   draw-your-font build   [-d workdir] (--labels labels.json | --chars "ABC…" | --charset name)
                          [--name "My Handwriting"] [-o font.ttf] [--smooth 0..2]
                          [--weight=-2..2] [--formats ttf,woff,woff2,css]
                          (negative weight needs the = form: --weight=-1)
   draw-your-font make    <photo...> (--chars "ABC…" | --charset name) [build options]
+  draw-your-font build-korean [-d workdir] --labels labels.json
+                         [--name "My Hangul Hand"] [--formats ttf,woff,woff2,css]
   draw-your-font preview [-d workdir] [--text "…"] [-o preview.png]
 
 Typical flows:
@@ -27,6 +31,9 @@ Typical flows:
        draw-your-font segment photo.jpg -d work
        # inspect work/contact-1.png, write work/labels.json {"0":"A", …}
        draw-your-font build -d work --labels work/labels.json
+  4. Korean component template / labelled crops:
+       # labels use L:ㄱ, V:ㅏ, T:ㄱ (67 components total)
+       draw-your-font build-korean -d work --labels work/korean-labels.json
 `;
 
 const OPTS = {
@@ -66,6 +73,25 @@ async function main() {
     return;
   }
 
+  if (cmd === 'template-korean') {
+    const { generateKoreanTemplate, koreanTemplateMapFile } = require('./hangul');
+    const out = opt.out || 'korean-template.pdf';
+    await generateKoreanTemplate(out);
+    console.log(`Korean template written to ${out}. Map: ${koreanTemplateMapFile(out)}`);
+    return;
+  }
+
+  if (cmd === 'segment-korean') {
+    if (!positionals.length) fail('No template page photos given.');
+    const { segmentKoreanTemplate } = require('./hangul');
+    const manifest = await segmentKoreanTemplate(positionals, dir, {
+      delta: opt.delta ? Number(opt.delta) : undefined,
+      cap: opt.cap ? Number(opt.cap) : undefined,
+    });
+    console.log(`Captured ${manifest.blobs.length} Korean components. Crops: ${dir}/crops/  Labels: ${dir}/korean-labels.json`);
+    return;
+  }
+
   if (cmd === 'segment' || cmd === 'make') {
     if (!positionals.length) fail('No photos given.');
     const { segment } = require('./segment');
@@ -83,6 +109,11 @@ async function main() {
     return;
   }
 
+  if (cmd === 'build-korean') {
+    await buildKorean(dir, opt);
+    return;
+  }
+
   if (cmd === 'preview') {
     const { renderPreview } = require('./preview');
     const manifest = readJSON(path.join(dir, 'manifest.json'), 'Run build first.');
@@ -93,6 +124,72 @@ async function main() {
   }
 
   fail(`Unknown command "${cmd}".\n\n${USAGE}`);
+}
+
+async function buildKorean(dir, opt) {
+  if (!opt.labels) fail('build-korean requires --labels. Labels must be L:ㄱ, V:ㅏ, or T:ㄱ.');
+  const { trace, adjustWeight } = require('./trace');
+  const { buildTTF, toWoff, toWoff2, fontFaceCSS } = require('./assemble');
+  const { renderPreview } = require('./preview');
+  const { requiredComponents, placeComponent, buildHangulGlyphs } = require('./hangul');
+  const blobs = readJSON(path.join(dir, 'blobs.json'), 'Run segment first.');
+  const labels = readJSON(opt.labels, '');
+  const required = new Set(requiredComponents().map(({ key }) => key));
+  const parts = {};
+  const weight = Math.max(-2, Math.min(2, Number(opt.weight)));
+  const smooth = Number(opt.smooth);
+
+  for (const blob of blobs.blobs) {
+    const label = labels[blob.id];
+    if (!label) continue;
+    if (!required.has(label)) {
+      console.warn(`  ! "${label}" (blob ${blob.id}) is not a supported Hangul component, skipped`);
+      continue;
+    }
+    if (parts[label]) {
+      console.warn(`  ! duplicate "${label}" (blob ${blob.id}) - keeping the first one`);
+      continue;
+    }
+    let png = fs.readFileSync(path.join(dir, blob.crop));
+    png = await adjustWeight(png, weight);
+    const d = await trace(png, { smooth });
+    if (!d) {
+      console.warn(`  ! blob ${blob.id} ("${label}") traced to nothing - skipped`);
+      continue;
+    }
+    parts[label] = placeComponent(d, blob.cropSize, blobs.pad);
+  }
+
+  const glyphs = buildHangulGlyphs(parts);
+  const name = opt.name;
+  const base = opt.out ? opt.out.replace(/\.\w+$/, '') : path.join(dir, name.replace(/\s+/g, ''));
+  fs.mkdirSync(path.dirname(path.resolve(base)), { recursive: true });
+  const ttf = buildTTF(name, glyphs, { wordSpace: 500 });
+  const formats = opt.formats.split(',').map((s) => s.trim().toLowerCase());
+  const written = [];
+  if (formats.includes('ttf') || opt.out) {
+    fs.writeFileSync(`${base}.ttf`, ttf);
+    written.push(`${base}.ttf`);
+  }
+  if (formats.includes('woff')) {
+    fs.writeFileSync(`${base}.woff`, toWoff(ttf));
+    written.push(`${base}.woff`);
+  }
+  if (formats.includes('woff2')) {
+    fs.writeFileSync(`${base}.woff2`, await toWoff2(ttf));
+    written.push(`${base}.woff2`);
+  }
+  if (formats.includes('css')) {
+    fs.writeFileSync(`${base}.css`, fontFaceCSS(name, path.basename(base)));
+    written.push(`${base}.css`);
+  }
+
+  const sample = '가나다라마바사 아자차카타파하\n한글 손글씨 폰트 미리보기';
+  const sampleGlyphs = Object.fromEntries(glyphs.filter((g) => sample.includes(g.char)).map((g) => [g.char, g]));
+  await renderPreview({ name, glyphs: sampleGlyphs }, path.join(dir, 'korean-preview.png'), { text: sample });
+  fs.writeFileSync(path.join(dir, 'korean-manifest.json'), JSON.stringify({ name, components: Object.keys(parts), glyphCount: glyphs.length }, null, 2));
+  console.log(`Built ${glyphs.length} Hangul syllables → ${written.join(', ')}`);
+  console.log(`Preview: ${path.join(dir, 'korean-preview.png')}`);
 }
 
 async function build(dir, opt) {
