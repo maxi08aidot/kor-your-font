@@ -94,10 +94,22 @@ function koreanTemplateMapFile(out) {
 // uses durable ASCII cell IDs, and writes a UTF-8 companion map beside the PDF.
 // This keeps the npm package portable rather than bundling a multi-megabyte CJK
 // font merely to label a worksheet.
-function generateKoreanTemplate(out) {
+function defaultKoreanLabelFont() {
+  const fs = require('fs');
+  const candidates = [
+    '/System/Library/Fonts/Supplemental/AppleGothic.ttf',
+    '/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc',
+    '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+  ];
+  return candidates.find((file) => fs.existsSync(file));
+}
+
+function generateKoreanTemplate(out, { labelFont } = {}) {
   const fs = require('fs');
   const PDFDocument = require('pdfkit');
   const parts = requiredComponents();
+  const koreanFont = labelFont || defaultKoreanLabelFont();
+  if (koreanFont && !fs.existsSync(koreanFont)) throw new Error(`Korean label font not found: ${koreanFont}`);
   const doc = new PDFDocument({ size: 'A4', margin: 0 });
   const stream = fs.createWriteStream(out);
   doc.pipe(stream);
@@ -109,25 +121,33 @@ function generateKoreanTemplate(out) {
     if (page) doc.addPage();
     doc.fontSize(14).fillColor('#999').text(`draw-your-font Korean - page ${page + 1}`, TEMPLATE.margin, TEMPLATE.margin, { lineBreak: false });
     doc.fontSize(8).fillColor('#aaa').text(
-      'Open the accompanying -map.txt file. Write the indicated jamo large in each cell. Photograph the full page from above.',
+      koreanFont
+        ? 'Write the jamo shown in each cell, large and centered. Photograph the full page from above.'
+        : 'Open the accompanying -map.txt file. Write the indicated jamo large in each cell. Photograph the full page from above.',
       TEMPLATE.margin, TEMPLATE.margin + 22, { width: gridW }
     );
     parts.slice(page * perPage, (page + 1) * perPage).forEach((part, i) => {
       const x = TEMPLATE.margin + (i % TEMPLATE.cols) * cw;
       const y = TEMPLATE.margin + TEMPLATE.header + Math.floor(i / TEMPLATE.cols) * ch;
       doc.rect(x, y, cw - 4, ch - 4).lineWidth(0.8).stroke('#c8c8c8');
-      doc.fontSize(9).fillColor('#aaa').text(`${part.role}${String(parts.indexOf(part) + 1).padStart(2, '0')}`, x + 3, y + 3, { lineBreak: false });
+      const role = part.role === 'L' ? 'initial' : part.role === 'V' ? 'vowel' : 'final';
+      if (koreanFont) {
+        doc.font(koreanFont).fontSize(14).fillColor('#aaa').text(`${role} ${part.char}`, x + 3, y + 3, { lineBreak: false });
+        doc.font('Helvetica');
+      } else {
+        doc.fontSize(9).fillColor('#aaa').text(`${part.role}${String(parts.indexOf(part) + 1).padStart(2, '0')}`, x + 3, y + 3, { lineBreak: false });
+      }
     });
   }
   doc.end();
   fs.writeFileSync(koreanTemplateMapFile(out), [
     'Korean component worksheet map',
-    'Write each jamo once inside its matching cell. Do not write the colon.',
+    koreanFont ? 'The jamo is printed in each cell. Write it once, large, inside the matching cell.' : 'Write each jamo once inside its matching cell. Do not write the colon.',
     ...parts.map((part, i) => `${part.role}${String(i + 1).padStart(2, '0')} = ${part.char}    (${part.key})`),
     '',
   ].join('\n'));
   return new Promise((resolve, reject) => {
-    stream.on('finish', () => resolve(out));
+    stream.on('finish', () => resolve({ out, koreanFont }));
     stream.on('error', reject);
   });
 }
@@ -189,8 +209,67 @@ async function segmentKoreanTemplate(photos, dir, { delta, cap } = {}) {
   return manifest;
 }
 
+// Freeform Korean is intentionally a *partial-font* flow. We keep every
+// finished syllable block as one glyph, never pretend to recover its jamo.
+// The user writes blocks with a clear one-block gap; close disconnected marks
+// within a block are then grouped by geometric proximity.
+function groupSyllableParts(boxes) {
+  if (!boxes.length) return [];
+  const heights = boxes.map((b) => b.y1 - b.y0 + 1).sort((a, b) => a - b);
+  const medianH = heights[Math.floor(heights.length / 2)] || 1;
+  const grow = Math.max(4, medianH * 0.36);
+  const parent = boxes.map((_, i) => i);
+  const find = (i) => parent[i] === i ? i : (parent[i] = find(parent[i]));
+  const join = (a, b) => { a = find(a); b = find(b); if (a !== b) parent[b] = a; };
+  for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+    const a = boxes[i], b = boxes[j];
+    const overlapX = Math.min(a.x1 + grow, b.x1 + grow) - Math.max(a.x0 - grow, b.x0 - grow);
+    const overlapY = Math.min(a.y1 + grow, b.y1 + grow) - Math.max(a.y0 - grow, b.y0 - grow);
+    if (overlapX >= 0 && overlapY >= 0) join(i, j);
+  }
+  const groups = new Map();
+  boxes.forEach((b, i) => {
+    const k = find(i);
+    const g = groups.get(k) || { x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1, area: 0 };
+    g.x0 = Math.min(g.x0, b.x0); g.y0 = Math.min(g.y0, b.y0);
+    g.x1 = Math.max(g.x1, b.x1); g.y1 = Math.max(g.y1, b.y1); g.area += b.area;
+    groups.set(k, g);
+  });
+  return [...groups.values()];
+}
+
+async function segmentKoreanFreeform(photos, dir, { delta, cap } = {}) {
+  const fs = require('fs');
+  const path = require('path');
+  const { binarize } = require('./capture');
+  const { connectedComponents, orderBlobs } = require('./blob-core');
+  const { PAD, writeCrop, writeContactSheet } = require('./segment');
+  fs.mkdirSync(path.join(dir, 'crops'), { recursive: true });
+  const all = [];
+  let id = 0;
+  for (let p = 0; p < photos.length; p++) {
+    const { ink, width, height, gray } = await binarize(photos[p], { delta, cap });
+    const minArea = Math.max(30, Math.round(width * height * 3e-6));
+    const parts = connectedComponents(ink, width, height, minArea)
+      .filter((b) => b.x1 - b.x0 + 1 >= 4 && b.y1 - b.y0 + 1 >= 4);
+    const ordered = orderBlobs(groupSyllableParts(parts)).map((b) => ({ ...b, id: id++, photo: photos[p] }));
+    for (const b of ordered) {
+      b.crop = path.join('crops', `${b.id}.png`);
+      b.cropSize = await writeCrop(ink, width, b, path.join(dir, b.crop));
+    }
+    await writeContactSheet(gray, width, height, ordered, path.join(dir, `contact-${p + 1}.png`));
+    all.push(...ordered.map(({ x0, y0, x1, y1, area, row, id: bid, photo, crop, cropSize }) => ({
+      id: bid, photo, row, box: { x0, y0, x1, y1 }, area, crop, cropSize,
+    })));
+  }
+  const manifest = { pad: PAD, photos, blobs: all, mode: 'korean-freeform' };
+  fs.writeFileSync(path.join(dir, 'blobs.json'), JSON.stringify(manifest, null, 2));
+  return manifest;
+}
+
 module.exports = {
   LEADS, VOWELS, FINALS, HANGUL_START, HANGUL_COUNT,
   componentKey, requiredComponents, decomposeSyllable, placeComponent, composeSyllable, buildHangulGlyphs,
-  generateKoreanTemplate, koreanTemplateMapFile, segmentKoreanTemplate,
+  defaultKoreanLabelFont, generateKoreanTemplate, koreanTemplateMapFile, segmentKoreanTemplate,
+  groupSyllableParts, segmentKoreanFreeform,
 };

@@ -23,8 +23,9 @@ nothing is uploaded.
 ## Decide the flow
 
 - **User has no photo yet** → offer the template: print, write, photograph.
-- **User wants a Korean/Hangul handwriting font** → use the Korean worksheet
-  flow below; do not use freeform blob labels for syllable blocks.
+- **User wants a Korean/Hangul handwriting font** → if they need only a known
+  set of syllables, use the Freeform Korean partial-font flow below. Use the
+  worksheet only when they need `가`–`힣` coverage.
 - **User shares photo(s) of handwriting** → main flow below.
 - **User pasted an image but there is no file path** → you can see it, but the
   CLI needs a file. Ask them to drag the image file into the terminal (that
@@ -59,7 +60,6 @@ syllable.
 
 ```bash
 $DYF template-korean -o korean-template.pdf
-# The command also writes korean-template-map.txt. Keep it open while writing.
 # After the user photographs both complete pages:
 $DYF segment-korean korean-page-1.jpg korean-page-2.jpg -d korean-work
 $DYF build-korean -d korean-work --labels korean-work/korean-labels.json \
@@ -73,6 +73,22 @@ replace them with ordinary one-character labels. Inspect
 `korean-work/korean-preview.png` before delivery. If a component is faint or
 missing, re-shoot the relevant complete worksheet page and rerun the two
 Korean commands in a fresh work directory.
+
+## Freeform Korean partial-font flow
+
+For a title, note, or known UI strings, the user does not need to write 67
+jamo. Ask them to write only the needed completed Hangul syllables and Latin
+characters, left-to-right, with a gap at least as wide as one syllable between
+blocks. They must provide the exact written sequence.
+
+```bash
+$DYF make-korean note.jpg --chars "오늘의기록Hello" --name "My Note"
+```
+
+This is a partial font: it contains only the written syllables/characters.
+Do not say that it generates other Hangul syllables. Read the contact sheet
+and preview before delivering; if two blocks merged or a jamo was split into a
+separate candidate, ask for a re-shoot with wider spacing.
 
 **2. Look, then label.** Read `work/contact-1.png` (one per photo): every
 detected blob is numbered. This is the step where your eyes matter - check:

@@ -80,4 +80,4 @@ async function segment(photos, dir, { delta, cap } = {}) {
   return manifest;
 }
 
-module.exports = { segment, PAD };
+module.exports = { segment, PAD, writeCrop, writeContactSheet };

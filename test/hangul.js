@@ -65,7 +65,29 @@ async function koreanTemplateE2E() {
   assert.ok(fs.existsSync(path.join(work, 'korean-preview.png')));
 }
 
-koreanTemplateE2E().then(() => console.log('hangul e2e OK - two worksheet pages became a complete Hangul font.')).catch((err) => {
+async function koreanFreeformE2E() {
+  const root = path.join(__dirname, '..');
+  const dir = path.join(os.tmpdir(), 'draw-your-font-hangul-freeform-e2e');
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(dir, { recursive: true });
+  // Three deliberately separated syllable blocks. Each block contains two
+  // disconnected pen marks, which verifies block grouping rather than the
+  // ordinary one-connected-blob-per-character assumption.
+  const mark = (x, y) => `<path d="M${x} ${y}L${x + 34} ${y + 75} M${x + 70} ${y + 12}L${x + 42} ${y + 87}" fill="none" stroke="#171717" stroke-width="11" stroke-linecap="round"/>`;
+  const photo = path.join(dir, 'note.jpg');
+  await sharp(Buffer.from(`<svg width="900" height="260" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="#f8f4eb"/>${mark(70, 70)}${mark(310, 70)}${mark(550, 70)}</svg>`)).jpeg({ quality: 88 }).toFile(photo);
+  const work = path.join(dir, 'work');
+  const output = execFileSync(process.execPath, [path.join(root, 'src/cli.js'), 'make-korean', photo, '--chars', '안녕글', '-d', work, '--name', 'Freeform Hangul'], { encoding: 'utf8' });
+  assert.match(output, /Found 3 Korean syllable candidates/);
+  const font = opentype.loadSync(path.join(work, 'FreeformHangul.ttf'));
+  for (const char of '안녕글') {
+    const glyph = font.charToGlyph(char);
+    assert.notEqual(glyph.name, '.notdef', `${char} must be in the partial font`);
+    assert.equal(glyph.advanceWidth, 1000, `${char} must use square Hangul metrics`);
+  }
+}
+
+Promise.all([koreanTemplateE2E(), koreanFreeformE2E()]).then(() => console.log('hangul e2e OK - worksheet and freeform partial-font flows work.')).catch((err) => {
   console.error(err);
   process.exit(1);
 });

@@ -50,6 +50,7 @@ set('^', [450, CAP]);
 set('¿¡', [DESC, XH]);
 
 function band(char) {
+  if (/^[\uAC00-\uD7A3]$/.test(char)) return [0, CAP];
   return BANDS.get(char) || [0, CAP];
 }
 
@@ -66,6 +67,23 @@ function placeGlyph(d, cropSize, pad, char, { lsb = 50, rsb = 50 } = {}) {
   const inkW = cropSize.width - 2 * pad;
   const inkH = cropSize.height - 2 * pad;
   const [bot, top] = band(char);
+  // Hangul syllables occupy a square cell. Unlike Latin letters, normalizing
+  // solely by ink height makes narrow syllables look too small and gives each
+  // one a different advance. Keep partial Korean fonts square and compatible
+  // with the full 11,172-syllable composition output.
+  if (/^[\uAC00-\uD7A3]$/.test(char)) {
+    const size = top - bot;
+    const s = size / Math.max(inkW, inkH);
+    const x = (UPM - inkW * s) / 2;
+    const y = bot + (size - inkH * s) / 2;
+    const placed = svgpath(d)
+      .translate(-pad, -pad)
+      .scale(s, -s)
+      .translate(x, y + inkH * s)
+      .round(1)
+      .toString();
+    return { d: fixWinding(placed), advance: UPM };
+  }
   const s = (top - bot) / inkH;
   const placed = svgpath(d)
     .translate(-pad, -pad)

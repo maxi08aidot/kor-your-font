@@ -8,14 +8,17 @@ const USAGE = `draw-your-font - turn a photo of your handwriting into a real fon
 
 Usage:
   draw-your-font template [-o template.pdf] [--charset minimal|spanish]
-  draw-your-font template-korean [-o korean-template.pdf]
+  draw-your-font template-korean [-o korean-template.pdf] [--label-font font.ttf]
   draw-your-font segment <photo...> [-d workdir] [--delta N] [--cap N]
   draw-your-font segment-korean <page-photo...> [-d workdir] [--delta N] [--cap N]
+  draw-your-font segment-korean-freeform <photo...> [-d workdir] [--delta N] [--cap N]
   draw-your-font build   [-d workdir] (--labels labels.json | --chars "ABC…" | --charset name)
                          [--name "My Handwriting"] [-o font.ttf] [--smooth 0..2]
                          [--weight=-2..2] [--formats ttf,woff,woff2,css]
                          (negative weight needs the = form: --weight=-1)
   draw-your-font make    <photo...> (--chars "ABC…" | --charset name) [build options]
+  draw-your-font make-korean <photo...> --chars "안녕하세요Hello"
+                         [build options]
   draw-your-font build-korean [-d workdir] --labels labels.json
                          [--name "My Hangul Hand"] [--formats ttf,woff,woff2,css]
   draw-your-font preview [-d workdir] [--text "…"] [-o preview.png]
@@ -34,6 +37,9 @@ Typical flows:
   4. Korean component template / labelled crops:
        # labels use L:ㄱ, V:ㅏ, T:ㄱ (67 components total)
        draw-your-font build-korean -d work --labels work/korean-labels.json
+  5. Freeform Korean partial font (write blocks in the exact order, with a
+     clear one-syllable gap):
+       draw-your-font make-korean note.jpg --chars "안녕하세요" --name "My Note"
 `;
 
 const OPTS = {
@@ -49,6 +55,7 @@ const OPTS = {
   text: { type: 'string' },
   delta: { type: 'string' },
   cap: { type: 'string' },
+  'label-font': { type: 'string' },
   help: { type: 'boolean', short: 'h' },
 };
 
@@ -76,8 +83,8 @@ async function main() {
   if (cmd === 'template-korean') {
     const { generateKoreanTemplate, koreanTemplateMapFile } = require('./hangul');
     const out = opt.out || 'korean-template.pdf';
-    await generateKoreanTemplate(out);
-    console.log(`Korean template written to ${out}. Map: ${koreanTemplateMapFile(out)}`);
+    const result = await generateKoreanTemplate(out, { labelFont: opt['label-font'] });
+    console.log(`Korean template written to ${out}.${result.koreanFont ? ' Jamo labels are printed in the cells.' : ` Map: ${koreanTemplateMapFile(out)}`}`);
     return;
   }
 
@@ -92,6 +99,19 @@ async function main() {
     return;
   }
 
+  if (cmd === 'segment-korean-freeform' || cmd === 'make-korean') {
+    if (!positionals.length) fail('No Korean handwriting photos given.');
+    if (cmd === 'make-korean' && !opt.chars) fail('make-korean requires --chars in the exact written order.');
+    const { segmentKoreanFreeform } = require('./hangul');
+    const manifest = await segmentKoreanFreeform(positionals, dir, {
+      delta: opt.delta ? Number(opt.delta) : undefined,
+      cap: opt.cap ? Number(opt.cap) : undefined,
+    });
+    console.log(`Found ${manifest.blobs.length} Korean syllable candidates across ${positionals.length} photo(s).`);
+    console.log(`Crops: ${dir}/crops/  Contact sheet(s): ${dir}/contact-*.png`);
+    if (cmd === 'segment-korean-freeform') return;
+  }
+
   if (cmd === 'segment' || cmd === 'make') {
     if (!positionals.length) fail('No photos given.');
     const { segment } = require('./segment');
@@ -104,7 +124,7 @@ async function main() {
     if (cmd === 'segment') return;
   }
 
-  if (cmd === 'build' || cmd === 'make') {
+  if (cmd === 'build' || cmd === 'make' || cmd === 'make-korean') {
     await build(dir, opt);
     return;
   }

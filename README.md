@@ -50,9 +50,13 @@ npx draw-your-font make photo.jpg --chars "ABCabc" --name "My Hand"
 npx draw-your-font template -o template.pdf --charset minimal   # or: spanish
 npx draw-your-font make page1.jpg page2.jpg --charset minimal --name "My Hand"
 
-# Korean: write 67 jamo over two worksheet pages, then build all 11,172 syllables
+# Korean, freeform: write only the syllables/English letters you need, in this
+# exact order and with a clear one-syllable gap between blocks.
+npx draw-your-font make-korean note.jpg --chars "오늘의기록Hello" --name "My Note"
+
+# Korean, complete: write 67 jamo over two worksheet pages, then build all
+# 11,172 syllables. When a Korean font is available, each cell shows its jamo.
 npx draw-your-font template-korean -o korean-template.pdf
-# Open korean-template-map.txt beside the PDF, then photograph both full pages.
 npx draw-your-font segment-korean korean-page-1.jpg korean-page-2.jpg -d korean-work
 npx draw-your-font build-korean -d korean-work --labels korean-work/korean-labels.json \
   --name "My Hangul Hand" --formats ttf,woff,woff2,css
@@ -68,6 +72,7 @@ binary. Works on macOS / Linux / Windows wherever Node ≥ 18 runs.
 | `template` | printable A4 PDF grid (`--charset minimal\|spanish`) |
 | `template-korean` | two-page worksheet for the 67 modern Hangul components, plus a UTF-8 cell map |
 | `segment <photos…>` | find letters → crops + numbered contact sheet + `blobs.json` |
+| `make-korean <photos…> --chars "…"` | group clearly separated handwritten syllable blocks and build a partial Korean/Latin font |
 | `segment-korean <page photos…>` | capture each known worksheet cell intact; writes `korean-labels.json` automatically |
 | `build` | labeled crops → font (`--labels` / `--chars` / `--charset`) |
 | `build-korean` | 67 traced components → every modern Hangul syllable (`가`–`힣`) |
@@ -79,6 +84,22 @@ Refinement flags: `--smooth 0..2` (rounder curves), `--weight=-2..2`
 snippet). Run `draw-your-font --help` for everything.
 
 ### Korean handwriting flow
+
+There are two Korean flows, mirroring the original tool's freeform-photo and
+template options.
+
+**Freeform / small character set.** Write only the Hangul syllables and Latin
+characters you need, left to right, with a gap at least as wide as one syllable
+block. Pass that exact sequence to `make-korean`. It makes a *partial font*:
+the written characters work, while unwritten Korean syllables are absent. This
+is ideal for a note, title, sticker, or a known set of UI strings. It does not
+claim to infer jamo from an arbitrary completed syllable and generate unseen
+ones.
+
+**Complete Korean.** The two-page worksheet collects all 67 role-specific
+modern jamo and builds `가`–`힣`. On macOS the generated template labels every
+cell directly with its jamo. On a system without an available Korean font, use
+`--label-font /path/to/korean-font.ttf`, or consult the companion map file.
 
 Korean syllables are made from a leading consonant, vowel, and optional final
 consonant. Freeform blob detection is the wrong input model because the parts
