@@ -70,8 +70,7 @@ async function koreanTemplateE2E() {
     photos.push(photo);
   }
   const work = path.join(dir, 'work');
-  execFileSync(process.execPath, [path.join(root, 'src/cli.js'), 'segment-korean', ...photos, '-d', work], { encoding: 'utf8' });
-  const output = execFileSync(process.execPath, [path.join(root, 'src/cli.js'), 'build-korean', '-d', work, '--labels', path.join(work, 'korean-labels.json'), '--name', 'Hangul Hand'], { encoding: 'utf8' });
+  const output = execFileSync(process.execPath, [path.join(root, 'src/cli.js'), 'make-korean-full', ...photos, '-d', work, '--name', 'Hangul Hand'], { encoding: 'utf8' });
   assert.match(output, /Built 11172 Hangul syllables/);
   assert.ok(fs.existsSync(path.join(work, 'HangulHand.ttf')));
   assert.ok(fs.existsSync(path.join(work, 'korean-preview.png')));

@@ -19,6 +19,8 @@ Usage:
   draw-your-font make    <photo...> (--chars "ABC…" | --charset name) [build options]
   draw-your-font make-korean <photo...> --chars "안녕하세요Hello"
                          [build options]
+  draw-your-font make-korean-full <worksheet-page photos...>
+                         [build options]
   draw-your-font build-korean [-d workdir] --labels labels.json
                          [--name "My Hangul Hand"] [--formats ttf,woff,woff2,css]
   draw-your-font preview [-d workdir] [--text "…"] [-o preview.png]
@@ -40,6 +42,8 @@ Typical flows:
   5. Freeform Korean partial font (write blocks in the exact order, with a
      clear one-syllable gap):
        draw-your-font make-korean note.jpg --chars "안녕하세요" --name "My Note"
+  6. Complete Korean font in one command (two completed worksheet pages):
+       draw-your-font make-korean-full page-1.jpg page-2.jpg --name "My Hangul Hand"
 `;
 
 const OPTS = {
@@ -96,6 +100,19 @@ async function main() {
       cap: opt.cap ? Number(opt.cap) : undefined,
     });
     console.log(`Captured ${manifest.blobs.length} Korean components. Crops: ${dir}/crops/  Labels: ${dir}/korean-labels.json`);
+    return;
+  }
+
+  if (cmd === 'make-korean-full') {
+    if (!positionals.length) fail('No Korean worksheet page photos given.');
+    const { segmentKoreanTemplate } = require('./hangul');
+    const manifest = await segmentKoreanTemplate(positionals, dir, {
+      delta: opt.delta ? Number(opt.delta) : undefined,
+      cap: opt.cap ? Number(opt.cap) : undefined,
+    });
+    console.log(`Captured ${manifest.blobs.length} Korean components; building all modern Hangul syllables…`);
+    opt.labels = path.join(dir, 'korean-labels.json');
+    await buildKorean(dir, opt);
     return;
   }
 

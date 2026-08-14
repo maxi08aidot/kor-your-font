@@ -60,6 +60,10 @@ npx draw-your-font template-korean -o korean-template.pdf
 npx draw-your-font segment-korean korean-page-1.jpg korean-page-2.jpg -d korean-work
 npx draw-your-font build-korean -d korean-work --labels korean-work/korean-labels.json \
   --name "My Hangul Hand" --formats ttf,woff,woff2,css
+
+# Same complete-Korean flow, as one command:
+npx draw-your-font make-korean-full korean-page-1.jpg korean-page-2.jpg -d korean-work \
+  --name "My Hangul Hand" --formats ttf,woff,woff2,css
 ```
 
 Pure npm, zero system dependencies: no FontForge, no ImageMagick, no potrace
@@ -73,6 +77,7 @@ binary. Works on macOS / Linux / Windows wherever Node ≥ 18 runs.
 | `template-korean` | two-page worksheet for the 67 modern Hangul components, plus a UTF-8 cell map |
 | `segment <photos…>` | find letters → crops + numbered contact sheet + `blobs.json` |
 | `make-korean <photos…> --chars "…"` | group clearly separated handwritten syllable blocks and build a partial Korean/Latin font |
+| `make-korean-full <page photos…>` | capture the two Korean worksheets and build all 11,172 modern Hangul syllables |
 | `segment-korean <page photos…>` | capture each known worksheet cell intact; writes `korean-labels.json` automatically |
 | `build` | labeled crops → font (`--labels` / `--chars` / `--charset`) |
 | `build-korean` | 67 traced components → every modern Hangul syllable (`가`–`힣`) |
