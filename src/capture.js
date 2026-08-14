@@ -7,20 +7,24 @@ const MAX_SIDE = 4200;
 
 /**
  * @param {string|Buffer} file photo (jpg/png/heic-converted)
- * @param {{delta?: number, cap?: number}} opts
+ * @param {{delta?: number, cap?: number, normalise?: boolean}} opts
  *   delta: how much darker than local background a pixel must be to count as ink
  *   cap:   absolute grey ceiling for ink (after normalise) - kills printed grey guides
  * @returns {{ink: Uint8Array, width: number, height: number, gray: Buffer}} ink: 1 = ink
  */
-async function binarize(file, { delta = 40, cap = 165 } = {}) {
+async function binarize(file, { delta = 40, cap = 165, normalise = true } = {}) {
   const dims = await sharp(file, { limitInputPixels: 1e9 }).metadata();
   if ((dims.width || 0) < 16 || (dims.height || 0) < 16) {
     throw new Error(`Image is too small to process (${dims.width}x${dims.height}) - need at least 16x16 px.`);
   }
-  const { data, info } = await sharp(file, { limitInputPixels: 1e9 })
+  let pipeline = sharp(file, { limitInputPixels: 1e9 })
     .rotate() // honour EXIF orientation
-    .grayscale()
-    .normalise()
+    .grayscale();
+  // Normalisation is useful for scanned worksheets, but can amplify the
+  // pixel grid of a photographed screen into apparent "ink". Freeform notes
+  // deliberately retain their natural luminance instead.
+  if (normalise) pipeline = pipeline.normalise();
+  const { data, info } = await pipeline
     .resize({ width: MAX_SIDE, height: MAX_SIDE, fit: 'inside', withoutEnlargement: true })
     .median(3) // stabilizes JPEG edge noise so stroke edges don't shed speck components
     .raw()

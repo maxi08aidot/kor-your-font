@@ -248,7 +248,9 @@ async function segmentKoreanFreeform(photos, dir, { delta, cap } = {}) {
   const all = [];
   let id = 0;
   for (let p = 0; p < photos.length; p++) {
-    const { ink, width, height, gray } = await binarize(photos[p], { delta, cap });
+    // Screenshot/screen photos have fine display texture. Avoid contrast
+    // normalisation here: it turns that texture into a giant connected blob.
+    const { ink, width, height, gray } = await binarize(photos[p], { delta, cap, normalise: false });
     const minArea = Math.max(30, Math.round(width * height * 3e-6));
     const parts = connectedComponents(ink, width, height, minArea)
       .filter((b) => b.x1 - b.x0 + 1 >= 4 && b.y1 - b.y0 + 1 >= 4);
