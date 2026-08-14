@@ -100,15 +100,86 @@ function binarize(imgData, { delta = 40, cap = 165 } = {}) {
   return ink;
 }
 
+// Korean syllables often consist of disconnected jamo. Screenshots also have
+// a pixel texture that defeats the normal local-background detector, so use a
+// conservative global ink threshold for the Korean quick-font path.
+function binarizeKorean(imgData) {
+  const gray = toGray(imgData);
+  const hist = new Uint32Array(256);
+  for (const value of gray) hist[value]++;
+  const target = Math.ceil(gray.length * 0.012);
+  let seen = 0, cap = 90;
+  for (let i = 0; i < hist.length; i++) {
+    seen += hist[i];
+    if (seen >= target) { cap = Math.max(55, Math.min(90, i)); break; }
+  }
+  const ink = new Uint8Array(gray.length);
+  for (let i = 0; i < ink.length; i++) if (gray[i] < cap) ink[i] = 1;
+  return ink;
+}
+
+function isHangul(char) { return /^[\uAC00-\uD7A3]$/.test(char); }
+
+function chunksByOverlap(boxes) {
+  const chunks = [];
+  for (const box of [...boxes].sort((a, b) => a.x0 - b.x0)) {
+    const prev = chunks[chunks.length - 1];
+    if (prev && box.x0 <= prev.x1) {
+      prev.x1 = Math.max(prev.x1, box.x1); prev.y0 = Math.min(prev.y0, box.y0);
+      prev.y1 = Math.max(prev.y1, box.y1); prev.area += box.area;
+    } else chunks.push({ ...box });
+  }
+  return chunks;
+}
+
+function partitionChunks(chunks, count) {
+  if (chunks.length <= count) return chunks;
+  const target = (chunks[chunks.length - 1].x1 - chunks[0].x0 + 1) / count;
+  const dp = Array.from({ length: count + 1 }, () => Array(chunks.length + 1).fill(null));
+  dp[0][0] = { cost: 0, start: -1 };
+  for (let g = 1; g <= count; g++) for (let end = g; end <= chunks.length; end++) {
+    for (let start = g - 1; start < end; start++) {
+      const prev = dp[g - 1][start]; if (!prev) continue;
+      const ratio = (chunks[end - 1].x1 - chunks[start].x0 + 1) / target;
+      const cost = prev.cost + (ratio - 1) ** 2 + (ratio > 2.2 ? 20 : 0);
+      if (!dp[g][end] || cost < dp[g][end].cost) dp[g][end] = { cost, start };
+    }
+  }
+  const result = [];
+  for (let end = chunks.length, g = count; g > 0; g--) {
+    const step = dp[g][end]; if (!step) return chunks;
+    const group = chunks.slice(step.start, end);
+    result.unshift(group.reduce((a, b) => ({ x0: Math.min(a.x0, b.x0), y0: Math.min(a.y0, b.y0), x1: Math.max(a.x1, b.x1), y1: Math.max(a.y1, b.y1), area: a.area + b.area })));
+    end = step.start;
+  }
+  return result;
+}
+
+function groupKoreanParts(parts, chars) {
+  const wanted = [...chars.normalize('NFC').replace(/\s+/g, '')];
+  const chunks = chunksByOverlap(parts);
+  if (chunks.length <= wanted.length) return chunks;
+  const change = wanted.findIndex((char, i) => i && isHangul(char) !== isHangul(wanted[i - 1]));
+  if (change > 0 && change < wanted.length) {
+    let split = 1, largest = -Infinity;
+    for (let i = 1; i < chunks.length; i++) {
+      const gap = chunks[i].x0 - chunks[i - 1].x1;
+      if (gap > largest) { largest = gap; split = i; }
+    }
+    return [...partitionChunks(chunks.slice(0, split), change), ...partitionChunks(chunks.slice(split), wanted.length - change)];
+  }
+  return partitionChunks(chunks, wanted.length);
+}
+
 // ---------- segmentation (shared blob-core) ----------
 
-function segmentImage(imgData, delta) {
+function segmentImage(imgData, delta, mode, chars) {
   const { width, height } = imgData;
-  const ink = binarize(imgData, { delta });
+  const ink = mode === 'korean' ? binarizeKorean(imgData) : binarize(imgData, { delta });
   const minArea = Math.max(30, Math.round(width * height * 3e-6));
   let boxes = connectedComponents(ink, width, height, minArea);
   boxes = boxes.filter((b) => b.x1 - b.x0 + 1 >= 4 && b.y1 - b.y0 + 1 >= 4);
-  boxes = mergeParts(boxes);
+  boxes = mode === 'korean' ? groupKoreanParts(boxes, chars) : mergeParts(boxes);
   return { ink, blobs: orderBlobs(boxes), width };
 }
 
@@ -145,8 +216,8 @@ async function traceCrop(img) {
   return svgpathLib(m[1]).scale(0.1, -0.1).translate(0, img.height).round(1).toString();
 }
 
-async function buildFont(imgData, chars, name, delta, onProgress) {
-  const { ink, blobs, width } = segmentImage(imgData, delta);
+async function buildFont(imgData, chars, name, delta, mode, onProgress) {
+  const { ink, blobs, width } = segmentImage(imgData, delta, mode, chars);
   const wanted = [...chars.normalize('NFC').replace(/\s+/g, '')].filter((c) => [...c].length === 1);
   const n = Math.min(blobs.length, wanted.length);
   const glyphs = [];
@@ -192,8 +263,9 @@ async function run() {
     await initPotrace();
     const name = ($('demo-name').value.trim() || 'My Hand').slice(0, 40);
     const delta = Number($('demo-delta').value);
+    const mode = $('demo-mode').value;
     const { ttf, glyphCount, blobCount, wantedCount } = await buildFont(
-      lastImage, $('demo-chars').value, name, delta, (t) => { status.textContent = t; }
+      lastImage, $('demo-chars').value, name, delta, mode, (t) => { status.textContent = t; }
     );
 
     const face = new FontFace(`demo-font-${++fontSeq}`, ttf.buffer ? ttf.buffer : ttf);
@@ -207,7 +279,7 @@ async function run() {
     link.download = `${name.replace(/\s+/g, '')}.ttf`;
 
     result.hidden = false;
-    let note = `${glyphCount} letters traced from ${blobCount} marks.`;
+    let note = `${glyphCount} ${mode === 'korean' ? 'Korean/Latin characters' : 'letters'} traced from ${blobCount} marks.`;
     if (blobCount !== wantedCount) {
       note += ` You listed ${wantedCount} characters - if the mapping looks off, adjust ink sensitivity or edit the character list to match what is on the paper, in reading order.`;
     }
@@ -241,6 +313,15 @@ function wire() {
   $('demo-delta').addEventListener('input', rerun);
   $('demo-chars').addEventListener('input', rerun);
   $('demo-name').addEventListener('input', rerun);
+  $('demo-mode').addEventListener('change', () => {
+    const korean = $('demo-mode').value === 'korean';
+    $('demo-chars').value = korean ? '오늘의기록Hello' : 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    $('demo-preview').textContent = korean ? '오늘의 기록 Hello' : 'The quick brown fox jumps over the lazy dog';
+    $('demo-mode-help').textContent = korean
+      ? 'Write completed Korean syllables and English letters left-to-right. This creates a partial font containing only those characters.'
+      : 'Write separated letters, then enter them in reading order.';
+    rerun();
+  });
 }
 
 // ---------- self-test (headless verification, #selftest) ----------
@@ -266,7 +347,7 @@ async function selftest() {
   try {
     await initPotrace();
     const { ttf, glyphCount } = await buildFont(
-      ctx.getImageData(0, 0, 900, 340), 'Abgo', 'Self Test', 40, () => {}
+      ctx.getImageData(0, 0, 900, 340), 'Abgo', 'Self Test', 40, 'latin', () => {}
     );
     const u8 = new Uint8Array(ttf.buffer ? ttf.buffer : ttf);
     const magicOK = u8[0] === 0 && u8[1] === 1 && u8[2] === 0 && u8[3] === 0;

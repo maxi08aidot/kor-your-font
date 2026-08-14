@@ -169,6 +169,11 @@
     border: 1px solid var(--line); border-radius: 8px;
     padding: 8px 10px; background: var(--paper); color: var(--ink);
   }
+  .demo-controls select {
+    font: 0.9rem system-ui, sans-serif;
+    border: 1px solid var(--line); border-radius: 8px;
+    padding: 8px 10px; background: var(--paper); color: var(--ink);
+  }
   .demo-controls input[type="range"] { accent-color: var(--accent); }
   #demo-status { margin-top: 14px; font-size: 0.9rem; color: var(--muted); min-height: 1.4em; }
   #demo-result[hidden] { display: none; }
@@ -270,6 +275,15 @@
     <section id="demo">
       <h2 class="hand">Try it right here</h2>
       <div class="demo-card">
+        <div class="demo-controls" style="grid-template-columns: 1fr 2fr; margin-top: 0;">
+          <label>font type
+            <select id="demo-mode">
+              <option value="latin">Latin / general</option>
+              <option value="korean">Korean quick font</option>
+            </select>
+          </label>
+          <label id="demo-mode-help">For Korean, write completed syllables left-to-right. This makes a font containing only the characters you write.</label>
+        </div>
         <div id="demo-drop" role="button" tabindex="0" aria-label="Choose a photo of your handwriting">
           <span class="hand">Drop a photo of your handwriting</span>
           or tap to choose one. Write your letters with a dark pen, not touching.
@@ -293,7 +307,8 @@
         </div>
         <p class="demo-note">Runs entirely in this tab: your photo never leaves your device.
         The full tool adds Claude's eyes (no need to type what you wrote), a print
-        template, WOFF2 and refinement.</p>
+        template, WOFF2 and refinement. For a complete Korean font, use the
+        <code>template-korean</code> worksheet and the AI skill: it composes all 11,172 modern syllables.</p>
       </div>
     </section>
 

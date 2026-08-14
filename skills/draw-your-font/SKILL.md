@@ -61,18 +61,17 @@ syllable.
 ```bash
 $DYF template-korean -o korean-template.pdf
 # After the user photographs both complete pages:
-$DYF segment-korean korean-page-1.jpg korean-page-2.jpg -d korean-work
-$DYF build-korean -d korean-work --labels korean-work/korean-labels.json \
+$DYF make-korean-full korean-page-1.jpg korean-page-2.jpg -d korean-work \
   --name "User's Hangul Hand" --formats ttf,woff,woff2,css
 ```
 
 Tell the user to use a dark pen and photograph the *full* flat worksheet from
-above. `segment-korean` uses known cell positions, so disconnected strokes in
-one jamo remain one source glyph. It creates labels automatically; do not
+above. `make-korean-full` uses known cell positions, so disconnected strokes in
+one jamo remain one source glyph. It creates role labels automatically; do not
 replace them with ordinary one-character labels. Inspect
 `korean-work/korean-preview.png` before delivery. If a component is faint or
-missing, re-shoot the relevant complete worksheet page and rerun the two
-Korean commands in a fresh work directory.
+missing, re-shoot the relevant complete worksheet page and rerun the command
+in a fresh work directory.
 
 ## Freeform Korean partial-font flow
 

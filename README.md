@@ -7,6 +7,10 @@ Draw your alphabet on paper. Take a photo. Get your font.
 **한국어도 지원합니다.** 한글 템플릿에 초성·중성·종성 67개를 한 번씩 쓰면,
 도구가 이를 조합해 현대 한글 완성형 11,172자(`가`–`힣`)를 갖춘 폰트를 만듭니다.
 
+웹 데모에서는 **Korean quick font**를 선택해 사진과 실제 쓴 문구를 넣으면,
+그 문구에 필요한 한글·영문만 담은 부분 폰트를 바로 내려받을 수 있습니다.
+사진만으로 더 유연하게 판독·검수하려면 Claude/Codex 스킬을 사용합니다.
+
 ![A photo of a handwritten alphabet in a spiral notebook becoming an installable font](assets/hero.png)
 
 *This is a real one-shot result: dim light, spiral binding, page shadow. One photo in, installable font out.*
