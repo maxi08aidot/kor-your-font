@@ -276,39 +276,38 @@
       <h2 class="hand">Try it right here</h2>
       <div class="demo-card">
         <div class="demo-controls" style="grid-template-columns: 1fr 2fr; margin-top: 0;">
-          <label>font type
+          <label>글꼴 종류
             <select id="demo-mode">
-              <option value="latin">Latin / general</option>
-              <option value="korean">Korean quick font</option>
+              <option value="latin">영문 / 일반</option>
+              <option value="korean">한글 간편 폰트</option>
             </select>
           </label>
-          <label id="demo-mode-help">For Korean, write completed syllables left-to-right. This makes a font containing only the characters you write.</label>
+          <label id="demo-mode-help">한글은 완성 음절과 영문을 왼쪽에서 오른쪽으로 쓰세요. 적은 글자만 담은 부분 폰트를 만듭니다.</label>
         </div>
         <div id="demo-drop" role="button" tabindex="0" aria-label="Choose a photo of your handwriting">
-          <span class="hand">Drop a photo of your handwriting</span>
-          or tap to choose one. Write your letters with a dark pen, not touching.
+          <span class="hand">필체 사진을 올리세요</span>
+          또는 눌러서 고르세요. 진한 펜으로 글자가 닿지 않게 써주세요.
           <input type="file" id="demo-file" accept="image/*" hidden>
         </div>
         <div class="demo-controls">
-          <label>what you wrote, in reading order
+          <label>쓴 글자 순서
             <input type="text" id="demo-chars" value="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789" spellcheck="false">
           </label>
-          <label>font name
+          <label>폰트 이름
             <input type="text" id="demo-name" value="My Hand" maxlength="40">
           </label>
-          <label>ink sensitivity
+          <label>잉크 감도
             <input type="range" id="demo-delta" min="20" max="80" value="40">
           </label>
         </div>
         <p id="demo-status"></p>
         <div id="demo-result" hidden>
-          <div id="demo-preview" contenteditable="true" spellcheck="false">The quick brown fox jumps over the lazy dog</div>
-          <a id="demo-download" href="#">Download TTF</a>
+          <div id="demo-preview" contenteditable="true" spellcheck="false">가나다라마바사</div>
+          <a id="demo-download" href="#">TTF 다운로드</a>
         </div>
-        <p class="demo-note">Runs entirely in this tab: your photo never leaves your device.
-        The full tool adds Claude's eyes (no need to type what you wrote), a print
-        template, WOFF2 and refinement. For a complete Korean font, use the
-        <code>template-korean</code> worksheet and the AI skill: it composes all 11,172 modern syllables.</p>
+        <p class="demo-note">모든 처리는 이 브라우저에서 이뤄집니다. 사진은 업로드되지 않습니다.
+        완성형 한글 폰트는 <code>template-korean</code> 워크시트와 AI 스킬을 사용하세요.
+        67개 자모에서 현대 한글 11,172자를 조합합니다.</p>
       </div>
     </section>
 

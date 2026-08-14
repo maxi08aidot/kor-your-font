@@ -259,7 +259,7 @@ async function run() {
   const status = $('demo-status');
   const result = $('demo-result');
   try {
-    status.textContent = 'reading the page…';
+    status.textContent = '사진을 읽는 중…';
     await initPotrace();
     const name = ($('demo-name').value.trim() || 'My Hand').slice(0, 40);
     const delta = Number($('demo-delta').value);
@@ -279,15 +279,15 @@ async function run() {
     link.download = `${name.replace(/\s+/g, '')}.ttf`;
 
     result.hidden = false;
-    let note = `${glyphCount} ${mode === 'korean' ? 'Korean/Latin characters' : 'letters'} traced from ${blobCount} marks.`;
+    let note = `${blobCount}개 필체 덩어리에서 ${glyphCount}개 글자를 추출했습니다.`;
     if (blobCount !== wantedCount) {
-      note += ` You listed ${wantedCount} characters - if the mapping looks off, adjust ink sensitivity or edit the character list to match what is on the paper, in reading order.`;
+      note += ` 입력한 글자는 ${wantedCount}개입니다. 글자 연결이 어색하면 잉크 감도를 조절하거나 쓴 순서를 확인하세요.`;
     }
     status.textContent = note;
   } catch (e) {
     result.hidden = true;
-    status.textContent = 'Could not build a font from that photo: ' + e.message +
-      '. Try more light, a darker pen, or a tighter crop.';
+    status.textContent = '이 사진에서는 폰트를 만들 수 없었습니다: ' + e.message +
+      '. 더 밝은 곳에서 진한 펜으로 쓰거나 사진을 가깝게 잘라 다시 시도하세요.';
   } finally {
     busy = false;
   }
@@ -318,8 +318,8 @@ function wire() {
     $('demo-chars').value = korean ? '오늘의기록Hello' : 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
     $('demo-preview').textContent = korean ? '오늘의 기록 Hello' : 'The quick brown fox jumps over the lazy dog';
     $('demo-mode-help').textContent = korean
-      ? 'Write completed Korean syllables and English letters left-to-right. This creates a partial font containing only those characters.'
-      : 'Write separated letters, then enter them in reading order.';
+      ? '한글 완성 음절과 영문을 왼쪽에서 오른쪽으로 쓰세요. 적은 글자만 담은 부분 폰트를 만듭니다.'
+      : '글자가 닿지 않게 쓴 뒤, 쓴 순서대로 입력하세요.';
     rerun();
   });
 }
