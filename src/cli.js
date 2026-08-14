@@ -106,6 +106,7 @@ async function main() {
     const manifest = await segmentKoreanFreeform(positionals, dir, {
       delta: opt.delta ? Number(opt.delta) : undefined,
       cap: opt.cap ? Number(opt.cap) : undefined,
+      expectedChars: cmd === 'make-korean' ? opt.chars : undefined,
     });
     console.log(`Found ${manifest.blobs.length} Korean syllable candidates across ${positionals.length} photo(s).`);
     console.log(`Crops: ${dir}/crops/  Contact sheet(s): ${dir}/contact-*.png`);

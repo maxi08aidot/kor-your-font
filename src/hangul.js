@@ -238,23 +238,115 @@ function groupSyllableParts(boxes) {
   return [...groups.values()];
 }
 
-async function segmentKoreanFreeform(photos, dir, { delta, cap } = {}) {
+function isHangulSyllable(char) {
+  return /^[\uAC00-\uD7A3]$/.test(char);
+}
+
+// First make conservative "chunks": components whose horizontal projections
+// overlap are certainly part of the same written unit. Unlike the old dilation
+// merge this never bridges a real word gap.
+function overlappingChunks(boxes) {
+  const chunks = [];
+  for (const box of [...boxes].sort((a, b) => a.x0 - b.x0)) {
+    const prev = chunks.at(-1);
+    if (prev && box.x0 <= prev.x1) {
+      prev.x1 = Math.max(prev.x1, box.x1); prev.y0 = Math.min(prev.y0, box.y0);
+      prev.y1 = Math.max(prev.y1, box.y1); prev.area += box.area;
+    } else chunks.push({ ...box });
+  }
+  return chunks;
+}
+
+// Split a contiguous handwritten run into its known number of characters.
+// This is deliberately geometry-only: the supplied text tells us *how many*
+// cells to create, never what the ink supposedly says. Dynamic programming
+// chooses the partition whose cell widths are most even, which safely joins
+// separated jamo strokes while keeping neighbouring syllables apart.
+function partitionChunks(chunks, count) {
+  if (count <= 0 || !chunks.length) return [];
+  if (chunks.length <= count) return chunks;
+  const span = chunks.at(-1).x1 - chunks[0].x0 + 1;
+  const target = span / count;
+  const dp = Array.from({ length: count + 1 }, () => Array(chunks.length + 1).fill(null));
+  dp[0][0] = { cost: 0, start: -1 };
+  for (let g = 1; g <= count; g++) for (let end = g; end <= chunks.length; end++) {
+    for (let start = g - 1; start < end; start++) {
+      const prev = dp[g - 1][start];
+      if (!prev) continue;
+      const width = chunks[end - 1].x1 - chunks[start].x0 + 1;
+      // A cell more than 2.2× the target is almost always two syllables.
+      const ratio = width / target;
+      const cost = prev.cost + (ratio - 1) ** 2 + (ratio > 2.2 ? 20 : 0);
+      if (!dp[g][end] || cost < dp[g][end].cost) dp[g][end] = { cost, start };
+    }
+  }
+  const result = [];
+  let end = chunks.length;
+  for (let g = count; g > 0; g--) {
+    const entry = dp[g][end];
+    if (!entry) return chunks;
+    const group = chunks.slice(entry.start, end);
+    result.unshift(group.reduce((a, b) => ({
+      x0: Math.min(a.x0, b.x0), y0: Math.min(a.y0, b.y0),
+      x1: Math.max(a.x1, b.x1), y1: Math.max(a.y1, b.y1), area: a.area + b.area,
+    })));
+    end = entry.start;
+  }
+  return result;
+}
+
+function groupPartsForExpectedText(parts, expectedChars) {
+  const chars = [...expectedChars.normalize('NFC').replace(/\s+/g, '')];
+  if (!chars.length) return groupSyllableParts(parts);
+  const chunks = overlappingChunks(parts);
+  if (chunks.length <= chars.length) return chunks;
+  // Script changes are excellent word-boundary clues in the common Korean +
+  // English case. Allocate chunks either side of the widest physical gap.
+  const change = chars.findIndex((char, i) => i && isHangulSyllable(char) !== isHangulSyllable(chars[i - 1]));
+  if (change > 0 && change < chars.length) {
+    let split = 1, largest = -Infinity;
+    for (let i = 1; i < chunks.length; i++) {
+      const gap = chunks[i].x0 - chunks[i - 1].x1;
+      if (gap > largest) { largest = gap; split = i; }
+    }
+    return [
+      ...partitionChunks(chunks.slice(0, split), change),
+      ...partitionChunks(chunks.slice(split), chars.length - change),
+    ];
+  }
+  return partitionChunks(chunks, chars.length);
+}
+
+async function segmentKoreanFreeform(photos, dir, { delta, cap, expectedChars } = {}) {
   const fs = require('fs');
   const path = require('path');
-  const { binarize } = require('./capture');
+  const { binarizeFreeform } = require('./capture');
   const { connectedComponents, orderBlobs } = require('./blob-core');
   const { PAD, writeCrop, writeContactSheet } = require('./segment');
   fs.mkdirSync(path.join(dir, 'crops'), { recursive: true });
   const all = [];
   let id = 0;
   for (let p = 0; p < photos.length; p++) {
-    // Screenshot/screen photos have fine display texture. Avoid contrast
-    // normalisation here: it turns that texture into a giant connected blob.
-    const { ink, width, height, gray } = await binarize(photos[p], { delta, cap, normalise: false });
+    const { ink, width, height, gray } = await binarizeFreeform(photos[p], { cap });
     const minArea = Math.max(30, Math.round(width * height * 3e-6));
-    const parts = connectedComponents(ink, width, height, minArea)
-      .filter((b) => b.x1 - b.x0 + 1 >= 4 && b.y1 - b.y0 + 1 >= 4);
-    const ordered = orderBlobs(groupSyllableParts(parts)).map((b) => ({ ...b, id: id++, photo: photos[p] }));
+    let parts = connectedComponents(ink, width, height, minArea)
+      .filter((b) => b.x1 - b.x0 + 1 >= 4 && b.y1 - b.y0 + 1 >= 4)
+      // A dark screen bezel / JPEG edge can be one huge component. It cannot
+      // be handwriting, so reject only components physically touching the
+      // capture border (real writing remains safely inside the photo).
+      .filter((b) => b.x0 > 1 && b.y0 > 1 && b.x1 < width - 2 && b.y1 < height - 2);
+    if (expectedChars && parts.length) {
+      const centers = parts.map((b) => (b.y0 + b.y1) / 2).sort((a, b) => a - b);
+      const heights = parts.map((b) => b.y1 - b.y0 + 1).sort((a, b) => a - b);
+      const center = centers[Math.floor(centers.length / 2)];
+      const tolerance = Math.max(100, heights[Math.floor(heights.length / 2)] * 3);
+      // For a one-line string supplied to make-korean, keep its dominant
+      // baseline and discard distant UI remnants. The review contact sheet is
+      // still written, so a future multi-line mode can expose rows explicitly.
+      parts = parts.filter((b) => Math.abs((b.y0 + b.y1) / 2 - center) <= tolerance);
+    }
+    const grouped = expectedChars ? groupPartsForExpectedText(parts, expectedChars) : groupSyllableParts(parts);
+    const ordered = orderBlobs(grouped).map((b) => ({ ...b, id: id++, photo: photos[p] }));
     for (const b of ordered) {
       b.crop = path.join('crops', `${b.id}.png`);
       b.cropSize = await writeCrop(ink, width, b, path.join(dir, b.crop));
@@ -273,5 +365,5 @@ module.exports = {
   LEADS, VOWELS, FINALS, HANGUL_START, HANGUL_COUNT,
   componentKey, requiredComponents, decomposeSyllable, placeComponent, composeSyllable, buildHangulGlyphs,
   defaultKoreanLabelFont, generateKoreanTemplate, koreanTemplateMapFile, segmentKoreanTemplate,
-  groupSyllableParts, segmentKoreanFreeform,
+  groupSyllableParts, groupPartsForExpectedText, segmentKoreanFreeform,
 };

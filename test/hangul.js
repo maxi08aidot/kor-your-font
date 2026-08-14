@@ -10,10 +10,22 @@ const opentype = require('opentype.js');
 const { buildTTF } = require('../src/assemble');
 const {
   HANGUL_COUNT, componentKey, requiredComponents, decomposeSyllable, buildHangulGlyphs,
+  groupPartsForExpectedText,
 } = require('../src/hangul');
 
 assert.equal(requiredComponents().length, 67, 'modern Hangul needs 67 base components');
 assert.deepEqual(decomposeSyllable('한'.codePointAt(0)), { lead: 'ㅎ', vowel: 'ㅏ', final: 'ㄴ' });
+
+// A freeform syllable can contain isolated jamo. With the known written text,
+// those marks are partitioned into character cells without recognising or
+// rewriting the handwriting itself.
+const grouped = groupPartsForExpectedText([
+  { x0: 0, x1: 42, y0: 20, y1: 80, area: 100 }, { x0: 8, x1: 55, y0: 85, y1: 120, area: 80 },
+  { x0: 75, x1: 120, y0: 20, y1: 80, area: 100 }, { x0: 78, x1: 130, y0: 84, y1: 120, area: 80 },
+  { x0: 155, x1: 195, y0: 20, y1: 80, area: 100 }, { x0: 212, x1: 245, y0: 20, y1: 80, area: 100 },
+  { x0: 260, x1: 292, y0: 20, y1: 80, area: 100 }, { x0: 305, x1: 332, y0: 20, y1: 80, area: 100 },
+], '안녕Hi');
+assert.equal(grouped.length, 4, 'known-text grouping must preserve one cell per written character');
 
 // Distinct, deliberately simple component outlines let this test exercise the
 // full 11,172-syllable composition/cmap path without requiring a photo fixture.
