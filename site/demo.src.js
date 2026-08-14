@@ -322,6 +322,15 @@ function wire() {
       : '글자가 닿지 않게 쓴 뒤, 쓴 순서대로 입력하세요.';
     rerun();
   });
+  const chooseFlow = (flow) => {
+    const self = flow === 'self';
+    $('demo-flow-self').setAttribute('aria-selected', String(self));
+    $('demo-flow-ai').setAttribute('aria-selected', String(!self));
+    $('demo-self-panel').hidden = !self;
+    $('demo-ai-panel').hidden = self;
+  };
+  $('demo-flow-self').addEventListener('click', () => chooseFlow('self'));
+  $('demo-flow-ai').addEventListener('click', () => chooseFlow('ai'));
 }
 
 // ---------- self-test (headless verification, #selftest) ----------

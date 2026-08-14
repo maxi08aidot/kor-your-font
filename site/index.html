@@ -147,6 +147,20 @@
     border-radius: 16px;
     padding: 28px;
   }
+  .demo-flow-tabs { display: flex; gap: 8px; margin-bottom: 20px; }
+  .demo-flow-tabs button {
+    flex: 1; border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px; background: var(--paper); color: var(--muted); cursor: pointer;
+    font: 600 0.95rem system-ui, sans-serif;
+  }
+  .demo-flow-tabs button[aria-selected="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  .demo-flow-panel[hidden] { display: none; }
+  .agent-flow { border: 1px solid var(--line); border-radius: 12px; padding: 24px; background: var(--paper); }
+  .agent-flow h3 { margin-bottom: 8px; font-size: 1.15rem; }
+  .agent-flow p { color: var(--muted); }
+  .agent-flow ol { margin: 16px 0 0 20px; color: var(--muted); }
+  .agent-flow li + li { margin-top: 8px; }
+  .agent-flow code { display: block; margin-top: 14px; padding: 12px; border-radius: 8px; background: var(--ink); color: #f5f2ea; overflow-x: auto; }
   #demo-drop {
     border: 2px dashed var(--line);
     border-radius: 12px;
@@ -275,6 +289,11 @@
     <section id="demo">
       <h2 class="hand">Try it right here</h2>
       <div class="demo-card">
+        <div class="demo-flow-tabs" role="tablist" aria-label="폰트 생성 방식">
+          <button id="demo-flow-self" type="button" role="tab" aria-selected="true">직접 만들기</button>
+          <button id="demo-flow-ai" type="button" role="tab" aria-selected="false">AI와 만들기</button>
+        </div>
+        <div id="demo-self-panel" class="demo-flow-panel" role="tabpanel">
         <div class="demo-controls" style="grid-template-columns: 1fr 2fr; margin-top: 0;">
           <label>글꼴 종류
             <select id="demo-mode">
@@ -308,6 +327,19 @@
         <p class="demo-note">모든 처리는 이 브라우저에서 이뤄집니다. 사진은 업로드되지 않습니다.
         완성형 한글 폰트는 <code>template-korean</code> 워크시트와 AI 스킬을 사용하세요.
         67개 자모에서 현대 한글 11,172자를 조합합니다.</p>
+        </div>
+        <div id="demo-ai-panel" class="demo-flow-panel" role="tabpanel" hidden>
+          <div class="agent-flow">
+            <h3>사진만 주고 AI와 만들기</h3>
+            <p>글자 순서를 직접 입력하지 않아도 됩니다. AI가 사진의 필체를 확인하고, 결과 미리보기까지 함께 검수합니다.</p>
+            <ol>
+              <li>Codex 또는 Claude Code에 스킬을 설치합니다.</li>
+              <li>필체 사진을 넣고 “한글 필체 폰트로 만들어줘”라고 요청합니다.</li>
+              <li>부분 폰트는 사진 한 장으로, 전체 한글 폰트는 67자모 워크시트 두 장으로 만듭니다.</li>
+            </ol>
+            <code>npx skills add danilo-znamerovszkij/draw-your-font</code>
+          </div>
+        </div>
       </div>
     </section>
 
