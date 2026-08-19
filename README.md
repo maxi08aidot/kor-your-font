@@ -1,5 +1,12 @@
 # kor-your-font
 
+**손글씨 사진을 진짜 폰트로 만듭니다. 무료, 오픈소스, 업로드 없음.**
+종이에 글씨를 쓰고, 사진을 찍고, 폰트를 받으세요. 모든 처리는 내 컴퓨터에서 이뤄집니다.
+
+*Turn a photo of your handwriting into a real font (TTF/WOFF/WOFF2) — free, open source, no uploads. Full Hangul support.*
+
+---
+
 > ### 이 프로젝트에 대하여 / About this project
 >
 > kor-your-font는 [Danilo Znamerovszkij](https://github.com/danilo-znamerovszkij)의
@@ -13,9 +20,6 @@
 > This fork adds Hangul support: composing 11,172 modern Korean syllables from jamo components,
 > a Hangul worksheet, freeform partial fonts, and a Korean web demo.*
 
-**Turn a photo of your handwriting into a real font (TTF/WOFF/WOFF2) - free, open source, no uploads, no credits.**
-
-Draw your alphabet on paper. Take a photo. Get your font.
 
 **한국어도 지원합니다.** 한글 템플릿에 초성·중성·종성 67개를 한 번씩 쓰면,
 도구가 이를 조합해 현대 한글 완성형 11,172자(`가`–`힣`)를 갖춘 폰트를 만듭니다.
@@ -70,6 +74,36 @@ npx kor-your-font make page1.jpg page2.jpg --charset minimal --name "My Hand"
 # Korean, freeform: write only the syllables/English letters you need, in this
 # exact order and with a clear one-syllable gap between blocks.
 npx kor-your-font make-korean note.jpg --chars "오늘의기록Hello" --name "My Note"
+
+# Wrote several lines? Mark the line breaks with "/" (or real newlines).
+# Without them the lines are treated as one run and fuse into each other.
+npx kor-your-font make-korean note.jpg --name "My Note" \
+  --chars "노력한다고 항상/성공할순 없지만/알아둬"
+
+# Cursive and brush writing let neighbouring syllables overlap, so a few boxes
+# can land off the mark. Inspect the contact sheet, then correct just those,
+# keyed by the id drawn on it, in contact-sheet pixels:
+#   fixes.json -> {"7": [150,195,282,318], "12": [648,190,760,330]}
+npx kor-your-font make-korean note.jpg --chars "…" --boxes fixes.json --name "My Note"
+
+# Cursive and brush writing is harder: neighbouring syllables share strokes, so
+# a few boxes land off the mark. Measure instead of guessing.
+
+# refine closes every severed stroke it can, on its own.
+npx kor-your-font refine note.jpg --chars "노력한다고 항상/성공할순 없지만" \
+  -d work --boxes work/box-fixes.json
+
+# review writes sheets showing the source ink above what the font actually
+# draws - judge each glyph against its own source, large, one at a time.
+npx kor-your-font review -d work
+
+# audit is the delivery gate. `clipped` (a severed stroke) and `orphan` (ink no
+# glyph claims) are real defects; `foreign` is reported but is NOT one - in
+# cursive two syllables genuinely share a brush stroke.
+npx kor-your-font audit -d work --chars "노력한다고 항상/성공할순 없지만"
+
+# Whatever is still wrong, hand-correct with --boxes, keyed by the id on the
+# contact sheet. refine leaves boxes you supplied alone.
 
 # Korean, complete: write 67 jamo over two worksheet pages, then build all
 # 11,172 syllables. When a Korean font is available, each cell shows its jamo.

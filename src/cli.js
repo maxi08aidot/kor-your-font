@@ -30,6 +30,10 @@ Usage:
                          [--name "My Hangul Hand"] [--formats ttf,woff,woff2,css]
   kor-your-font preview [-d workdir] [--text "…"] [-o preview.png]
 
+Checking a finished Korean font (see flow 7):
+  kor-your-font audit  [-d workdir] --chars "…"        objective defect report
+  kor-your-font review [-d workdir] [-o review.png]    source vs. what it draws
+  kor-your-font refine <photo...> --chars "…" [-d workdir] [--boxes fixes.json]
 
 Typical flows:
   1. Freeform photo, you know the order you wrote in:
@@ -50,6 +54,10 @@ Typical flows:
        kor-your-font make-korean note.jpg --chars "안녕하세요" --name "My Note"
   6. Complete Korean font in one command (two completed worksheet pages):
        kor-your-font make-korean-full page-1.jpg page-2.jpg --name "My Hangul Hand"
+  7. Cursive or brush Korean, where syllables share strokes - measure, do not guess:
+       kor-your-font refine note.jpg --chars "1행/2행" -d work --boxes work/fixes.json
+       kor-your-font review -d work          # then look at every glyph, large
+       kor-your-font audit  -d work --chars "1행/2행"
 `;
 
 const OPTS = {
@@ -166,6 +174,45 @@ async function main() {
     const out = opt.out || path.join(dir, 'preview.png');
     await renderPreview(manifest, out, { text: opt.text });
     console.log(`Preview: ${out}`);
+    return;
+  }
+
+  if (cmd === 'audit') {
+    const { audit, formatReport } = require('./audit');
+    if (!opt.chars) fail('audit requires --chars in the exact written order (use "/" between lines).');
+    const chars = [...opt.chars.normalize('NFC').replace(/[\/\n\r\s]/g, '')];
+    const pinnedFile = opt.boxes || path.join(dir, 'box-fixes.json');
+    const pinned = new Set(fs.existsSync(pinnedFile) ? Object.keys(JSON.parse(fs.readFileSync(pinnedFile, 'utf8'))) : []);
+    const report = formatReport(await audit(dir, chars, { pinned }));
+    console.log(report.text);
+    if (!report.clean) {
+      console.log('\nA clipped glyph is missing part of a stroke it owns; run "refine", then hand-correct\nwhat is left with --boxes. "foreign" is reported for information and is not a defect:\nin cursive Korean neighbouring syllables genuinely share brush strokes.');
+      process.exitCode = 1;
+    }
+    return;
+  }
+
+  if (cmd === 'review') {
+    const { renderReview } = require('./review');
+    const out = opt.out || path.join(dir, 'review.png');
+    const sheets = await renderReview(dir, out);
+    console.log(`Review sheets (source photo above, what the font draws below):\n  ${sheets.join('\n  ')}`);
+    console.log('Judge each glyph against the ink directly above it - never against your memory of\nthe character, and never by scanning a grid of small glyphs.');
+    return;
+  }
+
+  if (cmd === 'refine') {
+    const { refine } = require('./refine');
+    const { formatReport } = require('./audit');
+    if (!positionals.length) fail('refine needs at least one photo.');
+    if (!opt.chars) fail('refine requires --chars in the exact written order (use "/" between lines).');
+    const boxesFile = opt.boxes || path.join(dir, 'box-fixes.json');
+    const result = await refine({
+      photos: positionals, text: opt.chars, dir, boxesFile, name: opt.name,
+    });
+    const report = formatReport(result);
+    console.log(`\n${report.text}`);
+    console.log(`\nCorrections written to ${boxesFile}. Now run "review" and look at every glyph.`);
     return;
   }
 

@@ -182,7 +182,47 @@ async function foreignInkE2E() {
 }
 
 
-Promise.all([koreanTemplateE2E(), koreanFreeformE2E(), koreanMultiLineE2E(), foreignInkE2E()]).then(() => console.log('hangul e2e OK - worksheet, freeform, multi-line and foreign-ink flows work.')).catch((err) => {
+// The measurement commands are what keep a Korean run honest, so they must not
+// rot: audit reports objective defects, review draws the comparison sheets,
+// and refine loops until nothing is clipped.
+async function koreanToolingE2E() {
+  const root = path.join(__dirname, '..');
+  const dir = path.join(os.tmpdir(), 'kor-your-font-tooling-e2e');
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(dir, { recursive: true });
+  const mark = (x, y) => `<path d="M${x} ${y}L${x + 34} ${y + 75} M${x + 70} ${y + 12}L${x + 42} ${y + 87}" fill="none" stroke="#171717" stroke-width="11" stroke-linecap="round"/>`;
+  const row = (y) => `${mark(70, y)}${mark(310, y)}${mark(550, y)}`;
+  const photo = path.join(dir, 'note.jpg');
+  await sharp(Buffer.from(`<svg width="900" height="460" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="#f8f4eb"/>${row(60)}${row(280)}</svg>`)).jpeg({ quality: 88 }).toFile(photo);
+  const work = path.join(dir, 'work');
+  const text = '안녕글/하세요';
+  const cli = (...args) => execFileSync(process.execPath, [path.join(root, 'src/cli.js'), ...args], { encoding: 'utf8' });
+
+  const boxes = path.join(dir, 'box-fixes.json');
+  const refined = cli('refine', photo, '--chars', text, '-d', work, '--boxes', boxes, '--name', 'Tooling');
+  assert.match(refined, /converged/, 'refine must terminate on its own');
+  assert.ok(fs.existsSync(boxes), 'refine must write its corrections');
+
+  const report = cli('audit', '-d', work, '--chars', text, '--boxes', boxes);
+  assert.match(report, /6 glyphs/, 'audit must report every glyph in the font');
+  assert.match(report, /clipped 0/, 'a refined run must leave nothing clipped');
+
+  cli('review', '-d', work, '-o', path.join(dir, 'review.png'));
+  const sheets = fs.readdirSync(dir).filter((f) => /^review(-\d+)?\.png$/.test(f));
+  assert.ok(sheets.length >= 1, 'review must write at least one sheet');
+
+  // A box supplied by hand is a decision, not a defect: audit must not fail on
+  // it and refine must not widen it back.
+  const pinned = JSON.parse(fs.readFileSync(boxes, 'utf8'));
+  pinned['0'] = [80, 70, 150, 140];
+  fs.writeFileSync(boxes, JSON.stringify(pinned));
+  const again = cli('refine', photo, '--chars', text, '-d', work, '--boxes', boxes, '--name', 'Tooling');
+  assert.match(again, /converged/);
+  assert.deepEqual(JSON.parse(fs.readFileSync(boxes, 'utf8'))['0'], [80, 70, 150, 140],
+    'refine must leave a hand-supplied box untouched');
+}
+
+Promise.all([koreanTemplateE2E(), koreanFreeformE2E(), koreanMultiLineE2E(), foreignInkE2E(), koreanToolingE2E()]).then(() => console.log('hangul e2e OK - worksheet, freeform, multi-line, foreign-ink and audit/review/refine flows work.')).catch((err) => {
   console.error(err);
   process.exit(1);
 });
