@@ -1,20 +1,20 @@
 <!doctype html>
-<html lang="en">
+<html lang="ko">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>draw-your-font - turn a photo of your handwriting into a real font</title>
-<meta name="description" content="Draw your alphabet on paper. Take a photo. Get your font. Free, open source, runs locally. TTF, WOFF, WOFF2.">
-<meta property="og:title" content="draw-your-font">
-<meta property="og:description" content="Turn a photo of your handwriting into a real font. Free, open source, no uploads.">
-<meta property="og:image" content="https://danilo-znamerovszkij.github.io/draw-your-font/hero.png">
-<meta property="og:url" content="https://danilo-znamerovszkij.github.io/draw-your-font/">
+<title>kor-your-font - 손글씨 사진으로 만드는 진짜 한글 폰트</title>
+<meta name="description" content="종이에 손글씨를 쓰고 사진 한 장만 찍으면 진짜 폰트가 됩니다. 현대 한글 11,172자 완성형 지원. 무료, 오픈소스, 내 컴퓨터에서 실행. TTF, WOFF, WOFF2.">
+<meta property="og:title" content="kor-your-font">
+<meta property="og:description" content="손글씨 사진 한 장을 진짜 폰트로. 한글 11,172자 완성형 지원, 무료·오픈소스, 업로드 없음.">
+<meta property="og:image" content="https://jogwangjae.github.io/kor-your-font/hero.png">
+<meta property="og:url" content="https://jogwangjae.github.io/kor-your-font/">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="draw-your-font">
-<meta name="twitter:description" content="Turn a photo of your handwriting into a real font. Free, open source, no uploads.">
-<meta name="twitter:image" content="https://danilo-znamerovszkij.github.io/draw-your-font/hero.png">
-<meta name="twitter:image:alt" content="A handwritten alphabet in a spiral notebook becoming an installable font">
+<meta name="twitter:title" content="kor-your-font">
+<meta name="twitter:description" content="손글씨 사진 한 장을 진짜 폰트로. 한글 11,172자 완성형 지원, 무료·오픈소스, 업로드 없음.">
+<meta name="twitter:image" content="https://jogwangjae.github.io/kor-your-font/hero.png">
+<meta name="twitter:image:alt" content="스프링 공책에 쓴 손글씨가 설치 가능한 폰트로 바뀌는 모습">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="preload" href="DansHand.woff2" as="font" type="font/woff2" crossorigin>
 <style>
@@ -258,36 +258,37 @@
 <div class="wrap">
 
   <header class="reveal d1">
-    <span class="hand">Draw Your Font</span>
+    <span class="hand">Kor Your Font</span>
     <div class="links">
-      <a href="https://github.com/danilo-znamerovszkij/draw-your-font" aria-label="Star on GitHub">
-        <img src="https://img.shields.io/github/stars/danilo-znamerovszkij/draw-your-font?style=social" alt="GitHub stars" height="20">
+      <a href="https://github.com/jogwangjae/kor-your-font" aria-label="GitHub에서 별 누르기">
+        <img src="https://img.shields.io/github/stars/jogwangjae/kor-your-font?style=social" alt="GitHub 별 개수" height="20">
       </a>
-      <a href="https://github.com/danilo-znamerovszkij/draw-your-font">GitHub &nearr;</a>
+      <a href="https://github.com/jogwangjae/kor-your-font">GitHub &nearr;</a>
     </div>
   </header>
 
   <main>
     <div class="hero">
-      <h1 class="hand reveal d1">Your handwriting is a font now</h1>
-      <p class="sub reveal d2">Draw your alphabet on paper. Take a photo. Get a real
-        <strong>TTF / WOFF2</strong> font. Free, open source, runs on your machine.
-        Nothing is uploaded, no credits, and the font is 100% yours.</p>
+      <h1 class="hand reveal d1">이제 내 손글씨가 폰트입니다</h1>
+      <p class="sub reveal d2">종이에 손글씨를 쓰고 사진을 찍으세요. 진짜
+        <strong>TTF / WOFF2</strong> 폰트가 나옵니다. 현대 한글 11,172자 완성형까지
+        만들 수 있고, 무료 오픈소스에 내 컴퓨터에서 돌아갑니다.
+        사진은 서버로 올라가지 않고, 만들어진 폰트는 온전히 내 것입니다.</p>
       <div class="install reveal d3">
-        <code id="cmd">npx skills add danilo-znamerovszkij/draw-your-font</code>
-        <button class="copy" id="copyBtn" type="button" aria-label="Copy install command">Copy</button>
+        <code id="cmd">npx skills add jogwangjae/kor-your-font</code>
+        <button class="copy" id="copyBtn" type="button" aria-label="설치 명령어 복사">복사</button>
       </div>
-      <p class="caption reveal d3">This headline is set in a font made by this tool, from the photo below.</p>
+      <p class="caption reveal d3">위 제목은 아래 사진 한 장으로 이 도구가 만든 폰트입니다.</p>
     </div>
 
     <div class="hero-img reveal d4">
       <img src="hero.png" width="1200" height="675"
-           alt="A handwritten alphabet in a spiral notebook next to the resulting font installing in Font Book">
-      <p class="caption">A real one-shot result: dim light, spiral binding, page shadow. One photo in, installable font out.</p>
+           alt="스프링 공책에 쓴 손글씨와, 그것으로 만들어져 Font Book에 설치되는 폰트">
+      <p class="caption">보정 없는 실제 결과물입니다. 어두운 조명, 스프링 제본, 페이지 그림자 그대로. 사진 한 장 넣으면 설치 가능한 폰트가 나옵니다.</p>
     </div>
 
     <section id="demo">
-      <h2 class="hand">Try it right here</h2>
+      <h2 class="hand">여기서 바로 해보기</h2>
       <div class="demo-card">
         <div class="demo-flow-tabs" role="tablist" aria-label="폰트 생성 방식">
           <button id="demo-flow-self" type="button" role="tab" aria-selected="true">직접 만들기</button>
@@ -303,7 +304,7 @@
           </label>
           <label id="demo-mode-help">한글은 완성 음절과 영문을 왼쪽에서 오른쪽으로 쓰세요. 적은 글자만 담은 부분 폰트를 만듭니다.</label>
         </div>
-        <div id="demo-drop" role="button" tabindex="0" aria-label="Choose a photo of your handwriting">
+        <div id="demo-drop" role="button" tabindex="0" aria-label="손글씨 사진 고르기">
           <span class="hand">필체 사진을 올리세요</span>
           또는 눌러서 고르세요. 진한 펜으로 글자가 닿지 않게 써주세요.
           <input type="file" id="demo-file" accept="image/*" hidden>
@@ -337,78 +338,81 @@
               <li>필체 사진을 넣고 “한글 필체 폰트로 만들어줘”라고 요청합니다.</li>
               <li>부분 폰트는 사진 한 장으로, 전체 한글 폰트는 67자모 워크시트 두 장으로 만듭니다.</li>
             </ol>
-            <code>npx skills add danilo-znamerovszkij/draw-your-font</code>
+            <code>npx skills add jogwangjae/kor-your-font</code>
           </div>
         </div>
       </div>
     </section>
 
     <section>
-      <h2 class="hand">How it works</h2>
+      <h2 class="hand">어떻게 만들어지나요</h2>
       <div class="steps">
         <div class="step">
-          <span class="hand"><span class="n">1</span> Write</span>
-          <p>Grab a <b>dark pen</b> and write your alphabet on paper. Any paper.
-             A napkin counts. Letters just should not touch.</p>
+          <span class="hand"><span class="n">1</span> 쓰기</span>
+          <p><b>진한 펜</b>을 들고 종이에 글자를 쓰세요. 어떤 종이든 좋습니다.
+             냅킨도 괜찮아요. 글자끼리 닿지만 않게 써주세요.</p>
         </div>
         <div class="step">
-          <span class="hand"><span class="n">2</span> Photograph</span>
-          <p>One phone photo from above. It handles shadows, angles and
-             notebook spirals. <b>No scanner, no exact template.</b></p>
+          <span class="hand"><span class="n">2</span> 찍기</span>
+          <p>위에서 휴대폰으로 한 장이면 됩니다. 그림자도, 비스듬한 각도도,
+             공책 스프링도 알아서 처리합니다. <b>스캐너도, 정확한 양식도 필요 없습니다.</b></p>
         </div>
         <div class="step">
-          <span class="hand"><span class="n">3</span> Run /draw-your-font</span>
-          <p>Drag the photo into <b>Claude Code</b> and invoke the skill. Claude finds
-             and labels the letters, builds the font, and checks the result for you.</p>
+          <span class="hand"><span class="n">3</span> /kor-your-font 실행</span>
+          <p><b>Claude Code</b>에 사진을 끌어다 놓고 스킬을 불러주세요. 글자를 찾아
+             라벨을 붙이고, 초·중·종성을 조합해 폰트를 만들고, 결과까지 확인해 줍니다.</p>
         </div>
       </div>
       <div class="how-video">
         <video data-src="draw_your_font.mp4" width="1080" height="1440"
                muted loop playsinline preload="none"
-               aria-label="Screen recording: a handwriting photo becoming an installed font"></video>
-        <p class="caption">The whole flow, real time: photo in, installed font out.</p>
+               aria-label="화면 녹화: 손글씨 사진이 설치된 폰트로 바뀌는 과정"></video>
+        <p class="caption">실제 속도 그대로의 전체 과정. 사진을 넣고, 폰트를 설치합니다.</p>
       </div>
     </section>
 
     <section>
-      <h2 class="hand">No AI needed either</h2>
+      <h2 class="hand">AI 없이도 됩니다</h2>
       <div class="cli">
-        <p>The skill sits on a plain npm CLI with zero system dependencies.
-           If you can tell it what you wrote, it does the whole job by itself:</p>
-        <pre><span class="c"># freeform photo, in the order you wrote:</span>
-npx draw-your-font make photo.jpg --chars "ABCabc" --name "My Hand"
+        <p>이 스킬은 시스템 의존성이 전혀 없는 평범한 npm CLI 위에 얹혀 있습니다.
+           무엇을 썼는지만 알려주면 나머지는 혼자 다 합니다:</p>
+        <pre><span class="c"># 한글 자유 필기 사진, 쓴 순서 그대로 (부분 폰트):</span>
+npx kor-your-font make-korean note.jpg --chars "안녕하세요Hello" --name "My Note"
 
-<span class="c"># or print a guided template first:</span>
-npx draw-your-font template -o template.pdf
-npx draw-your-font make page1.jpg page2.jpg --charset minimal</pre>
+<span class="c"># 현대 한글 11,172자 전체 폰트는 한글 워크시트로:</span>
+npx kor-your-font template-korean -o korean-template.pdf
+npx kor-your-font make-korean-full page-1.jpg page-2.jpg --name "My Hangul Hand"
+
+<span class="c"># 영문만 필요하면:</span>
+npx kor-your-font make photo.jpg --chars "ABCabc" --name "My Hand"</pre>
       </div>
     </section>
 
     <section>
-      <h2 class="hand">The fine print</h2>
+      <h2 class="hand">알아두면 좋은 것들</h2>
       <div class="facts">
         <div class="fact">
-          <span class="hand">Yours</span>
-          <p>The font belongs to you. 100%, commercial use included. It is your handwriting.</p>
+          <span class="hand">내 것</span>
+          <p>폰트는 온전히 당신 것입니다. 상업적 사용까지 100% 자유롭게. 당신 손글씨니까요.</p>
         </div>
         <div class="fact">
-          <span class="hand">Free</span>
-          <p>The usual tool for this costs $8/month. Your terminal does it for free.</p>
+          <span class="hand">무료</span>
+          <p>비슷한 서비스는 보통 월 8달러지만, 터미널에서는 공짜입니다.</p>
         </div>
         <div class="fact">
-          <span class="hand">Local</span>
-          <p>Everything runs on your machine. Your handwriting never leaves it. MIT licensed.</p>
+          <span class="hand">내 컴퓨터에서</span>
+          <p>모든 처리가 내 컴퓨터에서 끝납니다. 손글씨는 밖으로 나가지 않습니다. MIT 라이선스.</p>
         </div>
       </div>
     </section>
   </main>
 
   <footer>
-    <span>MIT. Draw something.</span>
+    <span>MIT 라이선스. 뭐라도 한 줄 써보세요.</span>
     <nav>
-      <a href="https://github.com/danilo-znamerovszkij/draw-your-font">GitHub</a>
-      <a href="https://www.npmjs.com/package/draw-your-font">npm</a>
-      <a href="https://github.com/danilo-znamerovszkij/draw-your-font#readme">Docs</a>
+      <a href="https://github.com/jogwangjae/kor-your-font">GitHub</a>
+      <a href="https://www.npmjs.com/package/kor-your-font">npm</a>
+      <a href="https://github.com/jogwangjae/kor-your-font#readme">문서</a>
     </nav>
   </footer>
 
@@ -456,8 +460,8 @@ npx draw-your-font make page1.jpg page2.jpg --charset minimal</pre>
   btn.addEventListener('click', async () => {
     try {
       await navigator.clipboard.writeText(document.getElementById('cmd').textContent);
-      btn.textContent = 'Copied';
-      setTimeout(() => { btn.textContent = 'Copy'; }, 1600);
+      btn.textContent = '복사됨';
+      setTimeout(() => { btn.textContent = '복사'; }, 1600);
     } catch {
       /* clipboard blocked: select the text instead */
       const r = document.createRange();
