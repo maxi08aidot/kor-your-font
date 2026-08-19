@@ -22,3 +22,6 @@ docs/
 .claude/settings.local.json
 /sample_font.png
 
+# Handwriting samples and the fonts built from them stay local. They are
+# someone's actual handwriting, and this repository is public.
+assets/handwriting/
