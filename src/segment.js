@@ -8,15 +8,109 @@ const { connectedComponents, mergeParts, orderBlobs } = require('./blob-core');
 
 const PAD = 8; // white border around each crop, px
 
-async function writeCrop(ink, width, blob, file) {
+// A glyph box is a rectangle, but handwriting is not. Whatever a neighbouring
+// syllable sweeps through that rectangle gets cropped along with the glyph and
+// traced as part of it - the flecks and bars that show up around finished
+// glyphs. Edge contact cannot identify them: the box is the bounding box of the
+// ink, so the outermost real strokes touch it too. What separates an intruder
+// is that its stroke *continues outside* the box - only a fragment of it landed
+// here - while the glyph's own detached pieces (the circle of an ieung, the
+// short stroke of a vowel) lie wholly within.
+function labelComponents(ink, width, height) {
+  const labels = new Int32Array(width * height);
+  const stack = new Int32Array(width * height);
+  const areas = [0];
+  for (let start = 0; start < ink.length; start++) {
+    if (!ink[start] || labels[start]) continue;
+    const id = areas.length;
+    let sp = 0, area = 0;
+    stack[sp++] = start;
+    labels[start] = id;
+    while (sp) {
+      const p = stack[--sp];
+      const x = p % width, y = (p / width) | 0;
+      area++;
+      for (let dy = -1; dy <= 1; dy++) {
+        const ny = y + dy;
+        if (ny < 0 || ny >= height) continue;
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = x + dx;
+          if (nx < 0 || nx >= width) continue;
+          const np = ny * width + nx;
+          if (ink[np] && !labels[np]) { labels[np] = id; stack[sp++] = np; }
+        }
+      }
+    }
+    areas.push(area);
+  }
+  return { labels, areas };
+}
+
+// Decide, once for the whole page, which glyph each ink component belongs to:
+// the one whose box contains most of it.
+function assignComponents(ink, width, boxes, parts) {
+  const tally = new Map();
+  boxes.forEach((box, index) => {
+    for (let y = box.y0; y <= box.y1; y++) {
+      const row = y * width;
+      for (let x = box.x0; x <= box.x1; x++) {
+        if (!ink[row + x]) continue;
+        const id = parts.labels[row + x];
+        let counts = tally.get(id);
+        if (!counts) { counts = new Map(); tally.set(id, counts); }
+        counts.set(index, (counts.get(index) || 0) + 1);
+      }
+    }
+  });
+  const owner = new Map();
+  for (const [id, counts] of tally) {
+    let best = -1, bestN = 0;
+    for (const [index, n] of counts) if (n > bestN) { bestN = n; best = index; }
+    owner.set(id, best);
+  }
+  return owner;
+}
+
+async function writeCrop(ink, width, blob, file, parts, owner, ownIndex) {
   const w = blob.x1 - blob.x0 + 1, h = blob.y1 - blob.y0 + 1;
   const cw = w + 2 * PAD, ch = h + 2 * PAD;
+  const inside = new Map(); // component id -> pixels of it that fall in this box
+  if (parts) {
+    for (let y = 0; y < h; y++) {
+      const src = (blob.y0 + y) * width + blob.x0;
+      for (let x = 0; x < w; x++) {
+        if (!ink[src + x]) continue;
+        const id = parts.labels[src + x];
+        inside.set(id, (inside.get(id) || 0) + 1);
+      }
+    }
+  }
+  let mainInside = 0;
+  for (const n of inside.values()) if (n > mainInside) mainInside = n;
+  const keep = (id) => {
+    const here = inside.get(id) || 0;
+    if (here < 0.005 * mainInside) return false;      // paper grain, JPEG specks
+    if (!owner) return here >= 0.5 * parts.areas[id];
+    // Every stroke belongs to whichever glyph holds most of it. Judging that
+    // inside one box cannot work: a neighbour's stroke can be a large share of
+    // a small glyph and look native, while a stroke this glyph shares with its
+    // neighbour looks foreign to both.
+    if (owner.get(id) === ownIndex) return true;
+    // A stroke the cut runs through must survive in both halves. Measured on
+    // cursive Korean: intruders reached 17% of their component, the smallest
+    // genuinely shared stroke 30%. Proximity to the glyph body was tried as an
+    // additional condition and rejected - a shared stroke can sit a clear gap
+    // away from the rest of its syllable, and requiring contact deleted it.
+    return here >= 0.25 * parts.areas[id];
+  };
   const buf = Buffer.alloc(cw * ch, 255);
   for (let y = 0; y < h; y++) {
-    const src = (blob.y0 + y) * width;
+    const src = (blob.y0 + y) * width + blob.x0;
     const dst = (y + PAD) * cw + PAD;
     for (let x = 0; x < w; x++) {
-      if (ink[src + blob.x0 + x]) buf[dst + x] = 0;
+      if (!ink[src + x]) continue;
+      if (parts && !keep(parts.labels[src + x])) continue;
+      buf[dst + x] = 0;
     }
   }
   await sharp(buf, { raw: { width: cw, height: ch, channels: 1 } }).png().toFile(file);
@@ -80,4 +174,4 @@ async function segment(photos, dir, { delta, cap } = {}) {
   return manifest;
 }
 
-module.exports = { segment, PAD, writeCrop, writeContactSheet };
+module.exports = { segment, PAD, writeCrop, writeContactSheet, labelComponents, assignComponents };

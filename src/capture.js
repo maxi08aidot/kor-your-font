@@ -59,18 +59,57 @@ async function binarizeFreeform(file, { cap } = {}) {
     .median(3).raw().toBuffer({ resolveWithObject: true });
   const histogram = new Uint32Array(256);
   for (const value of data) histogram[value]++;
-  const target = Math.ceil(data.length * 0.012);
-  let seen = 0, adaptiveCap = 255;
-  for (let value = 0; value < histogram.length; value++) {
-    seen += histogram[value];
-    if (seen >= target) { adaptiveCap = value; break; }
+  const inkFraction = (t) => {
+    let seen = 0;
+    for (let value = 0; value < t; value++) seen += histogram[value];
+    return seen / data.length;
+  };
+  // Otsu: split the histogram where paper and ink separate best. A fixed
+  // "darkest N%" rule cannot do this - it assumes how much of the page is
+  // inked. Thin-pen notes cover ~1% but brush calligraphy covers 10% or more,
+  // and there the quantile lands inside the stroke body, so the threshold
+  // shaves the edges off every stroke and punches holes through the middle.
+  let sum = 0;
+  for (let value = 0; value < 256; value++) sum += value * histogram[value];
+  let sumB = 0, weightB = 0, best = 0, bestVariance = -1;
+  for (let value = 0; value < 256; value++) {
+    weightB += histogram[value];
+    if (!weightB) continue;
+    const weightF = data.length - weightB;
+    if (!weightF) break;
+    sumB += value * histogram[value];
+    const between = weightB * weightF * (sumB / weightB - (sum - sumB) / weightF) ** 2;
+    if (between > bestVariance) { bestVariance = between; best = value; }
   }
-  // The limits protect very clean scans (where the quantile is near zero) and
-  // low-contrast notes (where a background shadow reaches the quantile).
-  const threshold = cap === undefined ? Math.max(55, Math.min(90, adaptiveCap)) : cap;
-  const ink = new Uint8Array(data.length);
+  let threshold = Math.max(50, Math.min(200, best));
+  // A photographed screen turns its pixel grid into foreground, and a heavy
+  // shadow can look like a second mode; both make Otsu claim most of the page.
+  // Fall back to the conservative quantile when the split is clearly not ink.
+  if (inkFraction(threshold) > 0.35) {
+    const target = Math.ceil(data.length * 0.012);
+    let seen = 0, quantile = 255;
+    for (let value = 0; value < 256; value++) {
+      seen += histogram[value];
+      if (seen >= target) { quantile = value; break; }
+    }
+    threshold = Math.max(55, Math.min(90, quantile));
+  }
+  if (cap !== undefined) threshold = cap;
+  let ink = new Uint8Array(data.length);
   for (let i = 0; i < ink.length; i++) if (data[i] < threshold) ink[i] = 1;
-  return { ink, width: info.width, height: info.height, gray: data, threshold };
+  // Seal the pinholes that threshold flicker leaves inside a dry brush stroke.
+  // binarize() already does this; the freeform path was missing it, so every
+  // speckled stroke shed bogus contours and traced as a moth-eaten glyph.
+  ink = morph(morph(ink, info.width, info.height, true), info.width, info.height, false);
+  // A second, deliberately thin mask. Full-weight ink reproduces the stroke
+  // faithfully but lets neighbouring lines touch, which fuses their components
+  // and ruins segmentation. Callers segment on `lean` and render from `ink`.
+  // An explicit --cap is the caller overriding our judgement; thinning it
+  // further would silently undo their choice.
+  const leanThreshold = cap !== undefined ? threshold : Math.max(40, Math.round(threshold * 0.55));
+  const lean = leanThreshold === threshold ? ink : new Uint8Array(data.length);
+  if (lean !== ink) for (let i = 0; i < data.length; i++) if (data[i] < leanThreshold) lean[i] = 1;
+  return { ink, lean, width: info.width, height: info.height, gray: data, threshold, leanThreshold };
 }
 
 function morph(ink, width, height, grow) {

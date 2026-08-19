@@ -39,7 +39,7 @@ assert.equal(glyphs.length, HANGUL_COUNT);
 assert.equal(glyphs[0].char, '가');
 assert.equal(glyphs.at(-1).char, '힣');
 
-const out = path.join(os.tmpdir(), 'draw-your-font-hangul-test.ttf');
+const out = path.join(os.tmpdir(), 'kor-your-font-hangul-test.ttf');
 fs.writeFileSync(out, buildTTF('Hangul Test', glyphs, { wordSpace: 500 }));
 const font = opentype.loadSync(out);
 for (const char of ['가', '각', '한', '글', '힣']) {
@@ -51,7 +51,7 @@ console.log(`hangul OK - ${glyphs.length} modern syllables mapped into a valid T
 
 async function koreanTemplateE2E() {
   const root = path.join(__dirname, '..');
-  const dir = path.join(os.tmpdir(), 'draw-your-font-hangul-e2e');
+  const dir = path.join(os.tmpdir(), 'kor-your-font-hangul-e2e');
   fs.rmSync(dir, { recursive: true, force: true });
   fs.mkdirSync(dir, { recursive: true });
   const photos = [];
@@ -78,7 +78,7 @@ async function koreanTemplateE2E() {
 
 async function koreanFreeformE2E() {
   const root = path.join(__dirname, '..');
-  const dir = path.join(os.tmpdir(), 'draw-your-font-hangul-freeform-e2e');
+  const dir = path.join(os.tmpdir(), 'kor-your-font-hangul-freeform-e2e');
   fs.rmSync(dir, { recursive: true, force: true });
   fs.mkdirSync(dir, { recursive: true });
   // Three deliberately separated syllable blocks. Each block contains two
@@ -98,7 +98,91 @@ async function koreanFreeformE2E() {
   }
 }
 
-Promise.all([koreanTemplateE2E(), koreanFreeformE2E()]).then(() => console.log('hangul e2e OK - worksheet and freeform partial-font flows work.')).catch((err) => {
+
+// Regression: two lines of writing whose x-ranges overlap. Chunking is
+// horizontal-only, so before line splitting existed the two rows fused into a
+// single run and the whole photo collapsed to one or two glyph boxes.
+async function koreanMultiLineE2E() {
+  const root = path.join(__dirname, '..');
+  const dir = path.join(os.tmpdir(), 'kor-your-font-hangul-multiline-e2e');
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(dir, { recursive: true });
+  const mark = (x, y) => `<path d="M${x} ${y}L${x + 34} ${y + 75} M${x + 70} ${y + 12}L${x + 42} ${y + 87}" fill="none" stroke="#171717" stroke-width="11" stroke-linecap="round"/>`;
+  const photo = path.join(dir, 'note.jpg');
+  // Both rows start at the same x, so every column is shared between them.
+  const row = (y) => `${mark(70, y)}${mark(310, y)}${mark(550, y)}`;
+  await sharp(Buffer.from(`<svg width="900" height="460" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="#f8f4eb"/>${row(60)}${row(280)}</svg>`)).jpeg({ quality: 88 }).toFile(photo);
+  const work = path.join(dir, 'work');
+  const output = execFileSync(process.execPath, [path.join(root, 'src/cli.js'), 'make-korean', photo, '--chars', '안녕글/하세요', '-d', work, '--name', 'Multiline Hangul'], { encoding: 'utf8' });
+  assert.match(output, /Found 6 Korean syllable candidates/);
+  // The count alone does not prove the rows were separated: fusing both rows
+  // and then cutting the fused run vertically also yields six boxes. Assert
+  // the geometry instead - every box must sit inside one row, and the rows
+  // must hold three boxes each.
+  const { blobs } = JSON.parse(fs.readFileSync(path.join(work, 'blobs.json'), 'utf8'));
+  assert.equal(blobs.length, 6);
+  const spans = blobs.map((b) => b.box.y1 - b.box.y0 + 1);
+  const pageInk = Math.max(...blobs.map((b) => b.box.y1)) - Math.min(...blobs.map((b) => b.box.y0)) + 1;
+  assert.ok(Math.max(...spans) < 0.55 * pageInk,
+    `no glyph may straddle both rows (tallest ${Math.max(...spans)} of ${pageInk})`);
+  const mid = Math.min(...blobs.map((b) => b.box.y0)) + pageInk / 2;
+  const upper = blobs.filter((b) => (b.box.y0 + b.box.y1) / 2 < mid).length;
+  assert.equal(upper, 3, `expected 3 glyphs on the first row, got ${upper}`);
+  const font = opentype.loadSync(path.join(work, 'MultilineHangul.ttf'));
+  for (const char of '안녕글하세요') {
+    assert.notEqual(font.charToGlyph(char).index, 0, `${char} must survive multi-line grouping`);
+  }
+
+  // --boxes: a reviewer overrides one glyph's box after reading the contact
+  // sheet. The override must land verbatim and must not disturb the others.
+  const fixes = path.join(dir, 'fixes.json');
+  const override = [120, 40, 260, 170];
+  fs.writeFileSync(fixes, JSON.stringify({ 1: override }));
+  const fixedWork = path.join(dir, 'fixed');
+  execFileSync(process.execPath, [path.join(root, 'src/cli.js'), 'make-korean', photo, '--chars', '안녕글/하세요', '-d', fixedWork, '--name', 'Fixed Hangul', '--boxes', fixes], { encoding: 'utf8' });
+  const fixed = JSON.parse(fs.readFileSync(path.join(fixedWork, 'blobs.json'), 'utf8')).blobs;
+  assert.equal(fixed.length, 6, 'an override must not change the glyph count');
+  assert.deepEqual([fixed[1].box.x0, fixed[1].box.y0, fixed[1].box.x1, fixed[1].box.y1], override,
+    'the overridden box must be used verbatim');
+  assert.deepEqual(fixed[3].box, blobs[3].box, 'untouched glyphs must be unaffected');
+  // The separator must never become a glyph of its own.
+  assert.equal(font.charToGlyph('/').index, 0, 'the "/" line separator must not be a glyph');
+}
+
+
+// A neighbouring stroke that sweeps through a glyph's rectangle must not be
+// baked into that glyph, while the glyph's own detached pieces must survive.
+// Edge contact cannot tell them apart - the box is the ink's bounding box, so
+// the outermost real strokes touch it too - hence the rule is whether the
+// stroke continues outside the box.
+async function foreignInkE2E() {
+  const { writeCrop, labelComponents, PAD } = require('../src/segment');
+  const dir = path.join(os.tmpdir(), 'kor-your-font-foreign-ink');
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(dir, { recursive: true });
+  const W = 300, H = 140;
+  const ink = new Uint8Array(W * H);
+  const fill = (x0, y0, x1, y1) => {
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) ink[y * W + x] = 1;
+  };
+  fill(40, 40, 90, 100);   // the glyph body
+  fill(44, 108, 74, 120);  // a detached piece of the same glyph, wholly inside the box
+  fill(80, 20, 280, 28);   // a neighbour's stroke crossing the box and running far outside
+  ink[46 * W + 100] = 1;   // a speck of paper grain
+  const box = { x0: 38, y0: 18, x1: 102, y1: 122 };
+  const file = path.join(dir, 'crop.png');
+  await writeCrop(ink, W, box, file, labelComponents(ink, W, H));
+
+  const { data, info } = await sharp(file).grayscale().raw().toBuffer({ resolveWithObject: true });
+  const dark = (x, y) => data[(y + PAD - box.y0) * info.width + (x + PAD - box.x0)] < 128;
+  assert.ok(dark(60, 70), 'the glyph body must survive');
+  assert.ok(dark(60, 114), 'a detached piece lying wholly inside the box must survive');
+  assert.ok(!dark(90, 24), 'a stroke that continues outside the box must be dropped');
+  assert.ok(!dark(100, 46), 'an isolated speck must be dropped');
+}
+
+
+Promise.all([koreanTemplateE2E(), koreanFreeformE2E(), koreanMultiLineE2E(), foreignInkE2E()]).then(() => console.log('hangul e2e OK - worksheet, freeform, multi-line and foreign-ink flows work.')).catch((err) => {
   console.error(err);
   process.exit(1);
 });

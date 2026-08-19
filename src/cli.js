@@ -19,11 +19,17 @@ Usage:
   kor-your-font make    <photo...> (--chars "ABC…" | --charset name) [build options]
   kor-your-font make-korean <photo...> --chars "안녕하세요Hello"
                          [build options]
+                         (multi-line note: separate lines with "/" or a newline,
+                          e.g. --chars "노력한다고 항상/성공할순 없지만")
+                         [--boxes fixes.json] hand-correct individual glyph
+                          boxes: {"7": [x0,y0,x1,y1]} keyed by the id drawn on
+                          the contact sheet, in contact-sheet pixels
   kor-your-font make-korean-full <worksheet-page photos...>
                          [build options]
   kor-your-font build-korean [-d workdir] --labels labels.json
                          [--name "My Hangul Hand"] [--formats ttf,woff,woff2,css]
   kor-your-font preview [-d workdir] [--text "…"] [-o preview.png]
+
 
 Typical flows:
   1. Freeform photo, you know the order you wrote in:
@@ -51,6 +57,7 @@ const OPTS = {
   out: { type: 'string', short: 'o' },
   name: { type: 'string', default: 'My Handwriting' },
   labels: { type: 'string' },
+  boxes: { type: 'string' },
   chars: { type: 'string' },
   charset: { type: 'string' },
   smooth: { type: 'string', default: '1' },
@@ -124,6 +131,7 @@ async function main() {
       delta: opt.delta ? Number(opt.delta) : undefined,
       cap: opt.cap ? Number(opt.cap) : undefined,
       expectedChars: cmd === 'make-korean' ? opt.chars : undefined,
+      boxes: opt.boxes ? JSON.parse(require('fs').readFileSync(opt.boxes, 'utf8')) : undefined,
     });
     console.log(`Found ${manifest.blobs.length} Korean syllable candidates across ${positionals.length} photo(s).`);
     console.log(`Crops: ${dir}/crops/  Contact sheet(s): ${dir}/contact-*.png`);
@@ -315,7 +323,8 @@ function resolveLabels(blobs, opt, CHARSETS) {
     return Object.fromEntries(Object.entries(map).filter(([, v]) => v));
   }
   let chars;
-  if (opt.chars) chars = [...opt.chars.normalize('NFC').replace(/\s+/g, '')];
+  // '/' and newlines are line separators (see make-korean), never glyphs.
+  if (opt.chars) chars = [...opt.chars.normalize('NFC').replace(/[\/\n\r]/g, '').replace(/\s+/g, '')];
   else if (opt.charset) {
     chars = CHARSETS[opt.charset];
     if (!chars) fail(`Unknown charset "${opt.charset}". Available: ${Object.keys(CHARSETS).join(', ')}`);

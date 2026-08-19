@@ -119,7 +119,7 @@ function generateKoreanTemplate(out, { labelFont } = {}) {
   const perPage = TEMPLATE.cols * TEMPLATE.rows;
   for (let page = 0; page * perPage < parts.length; page++) {
     if (page) doc.addPage();
-    doc.fontSize(14).fillColor('#999').text(`draw-your-font Korean - page ${page + 1}`, TEMPLATE.margin, TEMPLATE.margin, { lineBreak: false });
+    doc.fontSize(14).fillColor('#999').text(`kor-your-font 한글 - page ${page + 1}`, TEMPLATE.margin, TEMPLATE.margin, { lineBreak: false });
     doc.fontSize(8).fillColor('#aaa').text(
       koreanFont
         ? 'Write the jamo shown in each cell, large and centered. Photograph the full page from above.'
@@ -295,11 +295,340 @@ function partitionChunks(chunks, count) {
   return result;
 }
 
-function groupPartsForExpectedText(parts, expectedChars) {
-  const chars = [...expectedChars.normalize('NFC').replace(/\s+/g, '')];
-  if (!chars.length) return groupSyllableParts(parts);
-  const chunks = overlappingChunks(parts);
-  if (chunks.length <= chars.length) return chunks;
+// Cluster parts into `count` text lines by their vertical centre. Optimal
+// 1-D k-means via DP: with a handful of lines and <200 parts this is instant,
+// and unlike largest-gap splitting it tolerates the ragged, slanted baselines
+// of real handwriting. Descenders that dip into the line below are assigned by
+// their centre, which is what a reader does too.
+function splitIntoLines(parts, count) {
+  if (count <= 1 || parts.length <= 1) return [parts];
+  // Anchor a component near its top rather than at its box centre. A sweeping
+  // descender belongs to the line it starts on, but its centre can sit inside
+  // the line below - and one stray component there stretches that line's
+  // x-range and shifts every cell in it.
+  const anchor = (b) => b.y0 + 0.3 * (b.y1 - b.y0);
+  const items = [...parts].sort((a, b) => anchor(a) - anchor(b));
+  if (items.length <= count) return items.map((b) => [b]);
+  const c = items.map(anchor);
+  const n = c.length;
+  // prefix sums -> O(1) within-cluster sum of squared deviations
+  const s1 = new Float64Array(n + 1), s2 = new Float64Array(n + 1);
+  for (let i = 0; i < n; i++) { s1[i + 1] = s1[i] + c[i]; s2[i + 1] = s2[i] + c[i] * c[i]; }
+  const sse = (i, j) => { // items i..j-1
+    const m = j - i;
+    if (m <= 0) return 0;
+    const sum = s1[j] - s1[i];
+    return (s2[j] - s2[i]) - (sum * sum) / m;
+  };
+  const dp = Array.from({ length: count + 1 }, () => new Float64Array(n + 1).fill(Infinity));
+  const cut = Array.from({ length: count + 1 }, () => new Int32Array(n + 1));
+  dp[0][0] = 0;
+  for (let k = 1; k <= count; k++) {
+    for (let j = k; j <= n; j++) {
+      for (let i = k - 1; i < j; i++) {
+        const v = dp[k - 1][i] + sse(i, j);
+        if (v < dp[k][j]) { dp[k][j] = v; cut[k][j] = i; }
+      }
+    }
+  }
+  const lines = [];
+  let end = n;
+  for (let k = count; k > 0; k--) { const start = cut[k][end]; lines.unshift(items.slice(start, end)); end = start; }
+  return lines;
+}
+
+// "가나다/라마바" or a real newline -> per-line expected text. Spaces are not
+// line breaks: they are ordinary word gaps inside a line.
+function parseExpectedLines(expectedChars) {
+  return String(expectedChars)
+    .normalize('NFC')
+    .split(/\r?\n|\\n|\//)
+    .map((line) => [...line.replace(/\s+/g, '')])
+    .filter((line) => line.length);
+}
+
+// Cursive Korean lets neighbouring syllables overlap horizontally, so a chunk
+// can legitimately hold several characters. Cut it at the columns carrying the
+// least ink, searched in a window around each evenly-spaced ideal position:
+// Hangul syllables are near-uniform in width, so "even" is a strong prior and
+// the valley search supplies the local correction.
+function splitChunkByValleys(chunk, count, ctx) {
+  if (count <= 1) return [chunk];
+  const width = chunk.x1 - chunk.x0 + 1;
+  const target = width / count;
+  let cuts;
+  if (ctx && ctx.ink) {
+    const cols = new Int32Array(width);
+    for (let y = chunk.y0; y <= chunk.y1; y++) {
+      const off = y * ctx.width;
+      for (let x = chunk.x0; x <= chunk.x1; x++) if (ctx.ink[off + x]) cols[x - chunk.x0]++;
+    }
+    const window = Math.max(2, Math.round(target * 0.38));
+    cuts = [];
+    for (let k = 1; k < count; k++) {
+      const ideal = Math.round(k * target);
+      let bestX = ideal, bestScore = Infinity;
+      for (let x = Math.max(1, ideal - window); x <= Math.min(width - 2, ideal + window); x++) {
+        // least ink wins; distance from the ideal column breaks ties
+        const score = cols[x] * 1000 + Math.abs(x - ideal);
+        if (score < bestScore) { bestScore = score; bestX = x; }
+      }
+      cuts.push(bestX);
+    }
+  } else {
+    cuts = Array.from({ length: count - 1 }, (_, k) => Math.round((k + 1) * target));
+  }
+  const bounds = [0, ...cuts, width];
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    const from = chunk.x0 + bounds[i], to = chunk.x0 + bounds[i + 1] - 1;
+    if (to < from) continue;
+    if (!ctx || !ctx.ink) { out.push({ ...chunk, x0: from, x1: to, area: Math.round(chunk.area / count) }); continue; }
+    // Re-tighten to the ink actually inside the slice: a bounding box that
+    // still spans the whole chunk would place every glyph identically.
+    let x0 = null, y0 = null, x1 = null, y1 = null, area = 0;
+    for (let y = chunk.y0; y <= chunk.y1; y++) {
+      const off = y * ctx.width;
+      for (let x = from; x <= to; x++) {
+        if (!ctx.ink[off + x]) continue;
+        area++;
+        if (x0 === null || x < x0) x0 = x;
+        if (x1 === null || x > x1) x1 = x;
+        if (y0 === null || y < y0) y0 = y;
+        if (y1 === null || y > y1) y1 = y;
+      }
+    }
+    if (x0 !== null) out.push({ x0, y0, x1, y1, area });
+  }
+  return out.length ? out : [chunk];
+}
+
+// Photos carry debris: a paper speck, a JPEG artefact at the frame edge, an
+// ellipsis the writer added but did not list in the expected text. Each would
+// otherwise become its own chunk and steal a character from a real syllable,
+// shifting every glyph after it. Drop debris when the line still has enough
+// real chunks; otherwise let it merge into its nearest neighbour.
+function dropDebrisChunks(chunks) {
+  if (chunks.length < 3) return chunks;
+  const areas = chunks.map((c) => c.area).sort((a, b) => a - b);
+  // Compare against the upper quartile, not the median: when a line picks up
+  // several specks at once (an ellipsis, shadow grain) they drag the median
+  // down until they start to look normal, and the rule stops firing.
+  const upper = areas[Math.min(areas.length - 1, Math.floor(areas.length * 0.75))] || 1;
+  const solid = chunks.filter((c) => c.area >= 0.15 * upper);
+  return solid.length ? solid : chunks;
+}
+
+// Hand out the line's characters across its chunks. Every chunk holds at least
+// one; each further character goes to whichever chunk is currently widest per
+// character it already carries.
+function allocateCounts(chunks, total) {
+  const counts = chunks.map(() => 1);
+  for (let left = total - chunks.length; left > 0; left--) {
+    let best = 0, bestScore = -Infinity;
+    for (let i = 0; i < chunks.length; i++) {
+      const score = (chunks[i].x1 - chunks[i].x0 + 1) / counts[i];
+      if (score > bestScore) { bestScore = score; best = i; }
+    }
+    counts[best]++;
+  }
+  return counts;
+}
+
+// Bounding boxes of the given whole-image components, over the entire image
+// rather than any one line's band.
+function componentExtents(parts, width, height, ids) {
+  const want = new Set(ids);
+  const out = new Map();
+  for (let y = 0; y < height; y++) {
+    const row = y * width;
+    for (let x = 0; x < width; x++) {
+      const id = parts.labels[row + x];
+      if (!id || !want.has(id)) continue;
+      const e = out.get(id);
+      if (!e) { out.set(id, { x0: x, y0: y, x1: x, y1: y }); continue; }
+      if (x < e.x0) e.x0 = x;
+      if (x > e.x1) e.x1 = x;
+      if (y < e.y0) e.y0 = y;
+      if (y > e.y1) e.y1 = y;
+    }
+  }
+  return out;
+}
+
+// Cut a whole line into `count` cells in one global decision, instead of first
+// allocating characters to chunks and then splitting each chunk: one bad
+// allocation shifts every glyph after it. Dynamic programming over the line's
+// column-ink profile picks the cut columns that carry the least ink while
+// keeping cell widths even, so real gaps between syllables cost nothing and a
+// cut through a connecting brush stroke is only taken when unavoidable.
+function cutLineIntoCells(parts, count, ctx) {
+  const x0 = Math.min(...parts.map((b) => b.x0)), x1 = Math.max(...parts.map((b) => b.x1));
+  const y0 = Math.min(...parts.map((b) => b.y0)), y1 = Math.max(...parts.map((b) => b.y1));
+  const width = x1 - x0 + 1, height = y1 - y0 + 1;
+  if (count <= 1 || width < count) return null;
+  // Lines of real handwriting interleave vertically: a descender from the line
+  // above reaches into this line's y-range. Counting every inked pixel in the
+  // band would drag that foreign ink into this line's glyphs, so restrict to
+  // pixels covered by the components that were assigned to *this* line.
+  // Components come from the thin mask, so their boxes under-cover the true
+  // stroke. Pad the ownership window before reading the full-weight mask.
+  const PAD_OWN = 4;
+  const owned = new Uint8Array(width * height);
+  for (const b of parts) {
+    for (let y = Math.max(y0, b.y0 - PAD_OWN); y <= Math.min(y1, b.y1 + PAD_OWN); y++) {
+      const row = (y - y0) * width;
+      for (let x = Math.max(x0, b.x0 - PAD_OWN); x <= Math.min(x1, b.x1 + PAD_OWN); x++) owned[row + (x - x0)] = 1;
+    }
+  }
+  const owns = (x, y) => owned[(y - y0) * width + (x - x0)];
+  const isInk = (x, y) => ctx && ctx.ink && ctx.ink[y * ctx.width + x] && owns(x, y);
+  // Where the cut lands is decided on the thin mask; what the glyph finally
+  // contains is read from the full-weight one.
+  const renderMask = (ctx && ctx.render) || (ctx && ctx.ink);
+  const isRender = (x, y) => renderMask && renderMask[y * ctx.width + x] && owns(x, y);
+  const cols = new Float64Array(width);
+  if (ctx && ctx.ink) {
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) if (isInk(x, y)) cols[x - x0]++;
+    }
+  } else {
+    // No pixels available: fall back to box coverage as a coarse profile.
+    for (const b of parts) for (let x = b.x0; x <= b.x1; x++) cols[x - x0] += 1;
+  }
+  let peak = 0;
+  for (const v of cols) if (v > peak) peak = v;
+  const inkCost = (x) => (peak ? (cols[x] / peak) ** 2 : 0);
+  const target = width / count;
+  // dp[k][x] = best cost for k cells covering columns [0, x)
+  const NEG = Infinity;
+  let prev = new Float64Array(width + 1).fill(NEG);
+  let prevCut = [];
+  const cutTable = [];
+  const cellCost = (a, b) => { const r = (b - a) / target; return (r - 1) ** 2; };
+  prev[0] = 0;
+  for (let k = 1; k <= count; k++) {
+    const cur = new Float64Array(width + 1).fill(NEG);
+    const back = new Int32Array(width + 1).fill(-1);
+    const lastCell = k === count;
+    for (let end = k; end <= width; end++) {
+      if (lastCell && end !== width) continue;
+      let best = NEG, bestA = -1;
+      for (let start = k - 1; start < end; start++) {
+        const base = prev[start];
+        if (base === NEG) continue;
+        // the cut that opens this cell sits at column `start`
+        const c = base + cellCost(start, end) + (start > 0 ? 6 * inkCost(start) : 0);
+        if (c < best) { best = c; bestA = start; }
+      }
+      cur[end] = best; back[end] = bestA;
+    }
+    cutTable.push(back);
+    prev = cur; prevCut = back;
+  }
+  if (prev[width] === NEG) return null;
+  const cuts = [];
+  let end = width;
+  for (let k = count; k > 0; k--) { const start = cutTable[k - 1][end]; if (start < 0) return null; cuts.unshift(start); end = start; }
+  const bounds = [...cuts, width];
+  const cells = [];
+  // Tally, per whole-image component, how its pixels distribute across the
+  // cells of this line. A stroke that dips below the line band - the tail of a
+  // rieul, the leg of a vowel - is one component with almost all of its mass in
+  // a single cell; clipping the box to the band would cut that tail off, and
+  // the crop filter would then delete the remainder as if it were a neighbour's
+  // ink. Give such a component's full extent to the cell that owns it.
+  const share = new Map(); // component id -> per-cell pixel counts
+  if (ctx && ctx.parts) {
+    for (let i = 0; i < count; i++) {
+      const from = x0 + bounds[i], to = x0 + bounds[i + 1] - 1;
+      for (let y = y0; y <= y1; y++) {
+        for (let x = from; x <= to; x++) {
+          if (!isRender(x, y)) continue;
+          const id = ctx.parts.labels[y * ctx.width + x];
+          let row = share.get(id);
+          if (!row) { row = new Int32Array(count); share.set(id, row); }
+          row[i]++;
+        }
+      }
+    }
+  }
+  // Only the single component that dominates a cell may extend it, and only if
+  // that component is itself mostly inside the cell. This is the glyph's own
+  // body: letting its descender through is the whole point. Every other
+  // component stays clipped at the cut - in cursive one brush stroke often
+  // crosses several syllables, and honouring all of them drags a neighbour's
+  // ink into the glyph.
+  const owner = new Map();
+  const bestOf = new Int32Array(count).fill(-1);
+  const bestPix = new Int32Array(count);
+  for (const [id, row] of share) {
+    for (let i = 0; i < count; i++) {
+      if (row[i] > bestPix[i]) { bestPix[i] = row[i]; bestOf[i] = id; }
+    }
+  }
+  for (let i = 0; i < count; i++) {
+    const id = bestOf[i];
+    if (id < 0) continue;
+    const row = share.get(id);
+    let total = 0;
+    for (let k = 0; k < count; k++) total += row[k];
+    if (total && row[i] >= 0.6 * total) owner.set(id, i);
+  }
+  const extents = ctx && ctx.parts ? componentExtents(ctx.parts, ctx.width, ctx.height, [...owner.keys()]) : new Map();
+  for (let i = 0; i < count; i++) {
+    const from = x0 + bounds[i], to = x0 + bounds[i + 1] - 1;
+    let bx0 = null, by0 = null, bx1 = null, by1 = null, area = 0;
+    if (ctx && ctx.ink) {
+      for (let y = y0; y <= y1; y++) {
+        for (let x = from; x <= to; x++) {
+          if (!isRender(x, y)) continue;
+          area++;
+          if (bx0 === null || x < bx0) bx0 = x;
+          if (bx1 === null || x > bx1) bx1 = x;
+          if (by0 === null || y < by0) by0 = y;
+          if (by1 === null || y > by1) by1 = y;
+        }
+      }
+    }
+    if (bx0 === null) { bx0 = from; bx1 = to; by0 = y0; by1 = y1; area = 1; }
+    // Reading order must be judged on the tight box. Expanded boxes overlap far
+    // more, and row clustering by vertical overlap then merges rows and reorders
+    // the glyphs - which silently shifts every character's mapping.
+    const core = { x0: bx0, y0: by0, x1: bx1, y1: by1 };
+    for (const [id, cell] of owner) {
+      if (cell !== i) continue;
+      const e = extents.get(id);
+      if (!e) continue;
+      bx0 = Math.min(bx0, e.x0); by0 = Math.min(by0, e.y0);
+      bx1 = Math.max(bx1, e.x1); by1 = Math.max(by1, e.y1);
+    }
+    cells.push({ x0: bx0, y0: by0, x1: bx1, y1: by1, area, core });
+  }
+  return cells;
+}
+
+// Single line of handwriting -> one glyph box per expected character.
+function groupLineForChars(parts, chars, ctx) {
+  const chunks = dropDebrisChunks(overlappingChunks(parts));
+  if (chunks.length === chars.length) return chunks;
+  // Ink-profile cutting sees the whole line at once and beats chunk-by-chunk
+  // splitting whenever syllables run together, which is the norm in cursive.
+  // Cut using only the components inside the chunks that survived debris
+  // removal - otherwise a speck at the frame edge still stretches the line's
+  // x-range and the final cell lands on the speck instead of the last syllable.
+  const kept = parts.filter((b) => {
+    const cx = (b.x0 + b.x1) / 2;
+    return chunks.some((c) => cx >= c.x0 && cx <= c.x1);
+  });
+  const cells = cutLineIntoCells(kept.length ? kept : parts, chars.length, ctx);
+  if (cells) return cells;
+  // Fewer chunks than characters: neighbouring syllables ran together, so the
+  // chunks must be cut apart rather than handed back under-segmented.
+  if (chunks.length < chars.length) {
+    const counts = allocateCounts(chunks, chars.length);
+    return chunks.flatMap((chunk, i) => splitChunkByValleys(chunk, counts[i], ctx));
+  }
   // Script changes are excellent word-boundary clues in the common Korean +
   // English case. Allocate chunks either side of the widest physical gap.
   const change = chars.findIndex((char, i) => i && isHangulSyllable(char) !== isHangulSyllable(chars[i - 1]));
@@ -317,25 +646,36 @@ function groupPartsForExpectedText(parts, expectedChars) {
   return partitionChunks(chunks, chars.length);
 }
 
-async function segmentKoreanFreeform(photos, dir, { delta, cap, expectedChars } = {}) {
+// Chunking is horizontal-only by design, so it must never see two lines of
+// writing at once: any two lines whose x-ranges overlap would fuse into a
+// single run. Split the page into lines first, then solve each line on its own.
+function groupPartsForExpectedText(parts, expectedChars, ctx) {
+  const lines = parseExpectedLines(expectedChars);
+  if (!lines.length) return groupSyllableParts(parts);
+  if (lines.length === 1) return groupLineForChars(parts, lines[0], ctx);
+  const bands = splitIntoLines(parts, lines.length);
+  return bands.flatMap((band, i) => (lines[i] && band.length ? groupLineForChars(band, lines[i], ctx) : []));
+}
+
+async function segmentKoreanFreeform(photos, dir, { delta, cap, expectedChars, boxes } = {}) {
   const fs = require('fs');
   const path = require('path');
   const { binarizeFreeform } = require('./capture');
   const { connectedComponents, orderBlobs } = require('./blob-core');
-  const { PAD, writeCrop, writeContactSheet } = require('./segment');
+  const { PAD, writeCrop, writeContactSheet, labelComponents, assignComponents } = require('./segment');
   fs.mkdirSync(path.join(dir, 'crops'), { recursive: true });
   const all = [];
   let id = 0;
   for (let p = 0; p < photos.length; p++) {
-    const { ink, width, height, gray } = await binarizeFreeform(photos[p], { cap });
+    const { ink, lean, width, height, gray } = await binarizeFreeform(photos[p], { cap });
     const minArea = Math.max(30, Math.round(width * height * 3e-6));
-    let parts = connectedComponents(ink, width, height, minArea)
+    let parts = connectedComponents(lean, width, height, minArea)
       .filter((b) => b.x1 - b.x0 + 1 >= 4 && b.y1 - b.y0 + 1 >= 4)
       // A dark screen bezel / JPEG edge can be one huge component. It cannot
       // be handwriting, so reject only components physically touching the
       // capture border (real writing remains safely inside the photo).
       .filter((b) => b.x0 > 1 && b.y0 > 1 && b.x1 < width - 2 && b.y1 < height - 2);
-    if (expectedChars && parts.length) {
+    if (expectedChars && parts.length && parseExpectedLines(expectedChars).length === 1) {
       const centers = parts.map((b) => (b.y0 + b.y1) / 2).sort((a, b) => a - b);
       const heights = parts.map((b) => b.y1 - b.y0 + 1).sort((a, b) => a - b);
       const center = centers[Math.floor(centers.length / 2)];
@@ -345,11 +685,38 @@ async function segmentKoreanFreeform(photos, dir, { delta, cap, expectedChars } 
       // still written, so a future multi-line mode can expose rows explicitly.
       parts = parts.filter((b) => Math.abs((b.y0 + b.y1) / 2 - center) <= tolerance);
     }
-    const grouped = expectedChars ? groupPartsForExpectedText(parts, expectedChars) : groupSyllableParts(parts);
-    const ordered = orderBlobs(grouped).map((b) => ({ ...b, id: id++, photo: photos[p] }));
-    for (const b of ordered) {
+    const inkParts = labelComponents(ink, width, height);
+    const grouped = expectedChars ? groupPartsForExpectedText(parts, expectedChars, { ink: lean, render: ink, width, height, parts: inkParts }) : groupSyllableParts(parts);
+    const indexed = grouped.map((b, i) => ({ ...b, _i: i }));
+    const ordered = orderBlobs(indexed.map((b) => ({ ...(b.core || b), _i: b._i })))
+      .map((o) => {
+        const { _i, core, ...box } = indexed[o._i];
+        return { ...box, row: o.row, id: id++, photo: photos[p] };
+      });
+    // Hand-corrected boxes, keyed by the id printed on the contact sheet.
+    // Where a brush stroke genuinely crosses between two syllables no cut is
+    // right, so the reviewer draws the boundary instead. Order and count are
+    // preserved: an override replaces one box in place, never adds or removes.
+    if (boxes) {
+      for (const b of ordered) {
+        const override = boxes[b.id] || boxes[String(b.id)];
+        if (!override) continue;
+        const [x0, y0, x1, y1] = override;
+        if ([x0, y0, x1, y1].some((v) => typeof v !== 'number')) {
+          throw new Error(`--boxes entry ${b.id} must be [x0, y0, x1, y1] numbers`);
+        }
+        b.x0 = Math.max(0, Math.min(x0, x1)); b.x1 = Math.min(width - 1, Math.max(x0, x1));
+        b.y0 = Math.max(0, Math.min(y0, y1)); b.y1 = Math.min(height - 1, Math.max(y0, y1));
+        let area = 0;
+        for (let y = b.y0; y <= b.y1; y++) for (let x = b.x0; x <= b.x1; x++) if (ink[y * width + x]) area++;
+        b.area = area;
+      }
+    }
+    const owner = assignComponents(ink, width, ordered, inkParts);
+    for (let i = 0; i < ordered.length; i++) {
+      const b = ordered[i];
       b.crop = path.join('crops', `${b.id}.png`);
-      b.cropSize = await writeCrop(ink, width, b, path.join(dir, b.crop));
+      b.cropSize = await writeCrop(ink, width, b, path.join(dir, b.crop), inkParts, owner, i);
     }
     await writeContactSheet(gray, width, height, ordered, path.join(dir, `contact-${p + 1}.png`));
     all.push(...ordered.map(({ x0, y0, x1, y1, area, row, id: bid, photo, crop, cropSize }) => ({
@@ -366,4 +733,5 @@ module.exports = {
   componentKey, requiredComponents, decomposeSyllable, placeComponent, composeSyllable, buildHangulGlyphs,
   defaultKoreanLabelFont, generateKoreanTemplate, koreanTemplateMapFile, segmentKoreanTemplate,
   groupSyllableParts, groupPartsForExpectedText, segmentKoreanFreeform,
+  splitIntoLines, parseExpectedLines,
 };
