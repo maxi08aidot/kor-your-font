@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 'use strict';
-// Prints the command that runs the draw-your-font CLI, trying:
-// 1. the monorepo layout (this skill lives inside the draw-your-font repo)
-// 2. a globally installed draw-your-font
+// Prints the command that runs the kor-your-font CLI, trying:
+// 1. the monorepo layout (this skill lives inside the kor-your-font repo)
+// 2. a globally installed kor-your-font
 // 3. npx fallback (works once the package is published to npm)
 const fs = require('fs');
 const path = require('path');
@@ -21,9 +21,9 @@ if (fs.existsSync(repoCli)) {
   }
 }
 try {
-  execSync('draw-your-font --help', { stdio: 'ignore' });
-  console.log('draw-your-font');
+  execSync('kor-your-font --help', { stdio: 'ignore' });
+  console.log('kor-your-font');
   process.exit(0);
 } catch {
-  console.log('npx -y draw-your-font');
+  console.log('npx -y kor-your-font');
 }

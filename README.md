@@ -1,4 +1,17 @@
-# draw-your-font
+# kor-your-font
+
+> ### 이 프로젝트에 대하여 / About this project
+>
+> kor-your-font는 [Danilo Znamerovszkij](https://github.com/danilo-znamerovszkij)의
+> [**draw-your-font**](https://github.com/danilo-znamerovszkij/draw-your-font)에서 갈라져 나온 파생 프로젝트입니다.
+> 사진 이진화·윤곽 추적·글리프 조립 등 폰트 생성 코어는 원저작물의 코드이며, MIT 라이선스에 따라 사용합니다.
+> 이 저장소가 새로 더한 것은 **한글 지원**입니다 — 초·중·종성 조합을 통한 현대 한글 완성형 11,172자 생성,
+> 한글 워크시트, 자유 필기 부분 폰트, 한국어 웹 데모.
+>
+> *kor-your-font is a derivative of [draw-your-font](https://github.com/danilo-znamerovszkij/draw-your-font)
+> by Danilo Znamerovszkij, used under the MIT License. The font-generation core is the original author's work.
+> This fork adds Hangul support: composing 11,172 modern Korean syllables from jamo components,
+> a Hangul worksheet, freeform partial fonts, and a Korean web demo.*
 
 **Turn a photo of your handwriting into a real font (TTF/WOFF/WOFF2) - free, open source, no uploads, no credits.**
 
@@ -18,12 +31,12 @@ Draw your alphabet on paper. Take a photo. Get your font.
 ## Use it as a Claude Code skill (the fun way)
 
 ```bash
-npx skills add danilo-znamerovszkij/draw-your-font
+npx skills add jogwangjae/kor-your-font
 ```
 
 Then in Claude Code, invoke the skill and hand it your photo:
 
-> */draw-your-font* *"here's a photo of my handwriting - make my font"* (drag the photo into the terminal)
+> */kor-your-font* *"here's a photo of my handwriting - make my font"* (drag the photo into the terminal)
 
 Claude finds your letters in the photo, labels them with vision, builds the
 font, shows you a preview, and critiques its own work. Iterate by talking:
@@ -47,26 +60,26 @@ when you can tell it what you wrote:
 
 ```bash
 # freeform photo, you know the order you wrote in:
-npx draw-your-font make photo.jpg --chars "ABCabc" --name "My Hand"
+npx kor-your-font make photo.jpg --chars "ABCabc" --name "My Hand"
 # → MyHand.ttf - double-click, install, done.
 
 # best quality: print a template, fill it, photograph:
-npx draw-your-font template -o template.pdf --charset minimal   # or: spanish
-npx draw-your-font make page1.jpg page2.jpg --charset minimal --name "My Hand"
+npx kor-your-font template -o template.pdf --charset minimal   # or: spanish
+npx kor-your-font make page1.jpg page2.jpg --charset minimal --name "My Hand"
 
 # Korean, freeform: write only the syllables/English letters you need, in this
 # exact order and with a clear one-syllable gap between blocks.
-npx draw-your-font make-korean note.jpg --chars "오늘의기록Hello" --name "My Note"
+npx kor-your-font make-korean note.jpg --chars "오늘의기록Hello" --name "My Note"
 
 # Korean, complete: write 67 jamo over two worksheet pages, then build all
 # 11,172 syllables. When a Korean font is available, each cell shows its jamo.
-npx draw-your-font template-korean -o korean-template.pdf
-npx draw-your-font segment-korean korean-page-1.jpg korean-page-2.jpg -d korean-work
-npx draw-your-font build-korean -d korean-work --labels korean-work/korean-labels.json \
+npx kor-your-font template-korean -o korean-template.pdf
+npx kor-your-font segment-korean korean-page-1.jpg korean-page-2.jpg -d korean-work
+npx kor-your-font build-korean -d korean-work --labels korean-work/korean-labels.json \
   --name "My Hangul Hand" --formats ttf,woff,woff2,css
 
 # Same complete-Korean flow, as one command:
-npx draw-your-font make-korean-full korean-page-1.jpg korean-page-2.jpg -d korean-work \
+npx kor-your-font make-korean-full korean-page-1.jpg korean-page-2.jpg -d korean-work \
   --name "My Hangul Hand" --formats ttf,woff,woff2,css
 ```
 
@@ -90,7 +103,7 @@ binary. Works on macOS / Linux / Windows wherever Node ≥ 18 runs.
 
 Refinement flags: `--smooth 0..2` (rounder curves), `--weight=-2..2`
 (thinner/bolder), `--formats ttf,woff,woff2,css` (web-ready + `@font-face`
-snippet). Run `draw-your-font --help` for everything.
+snippet). Run `kor-your-font --help` for everything.
 
 ### Korean handwriting flow
 

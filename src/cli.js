@@ -4,46 +4,46 @@ const fs = require('fs');
 const path = require('path');
 const { parseArgs } = require('node:util');
 
-const USAGE = `draw-your-font - turn a photo of your handwriting into a real font
+const USAGE = `kor-your-font - turn a photo of your handwriting into a real font
 
 Usage:
-  draw-your-font template [-o template.pdf] [--charset minimal|spanish]
-  draw-your-font template-korean [-o korean-template.pdf] [--label-font font.ttf]
-  draw-your-font segment <photo...> [-d workdir] [--delta N] [--cap N]
-  draw-your-font segment-korean <page-photo...> [-d workdir] [--delta N] [--cap N]
-  draw-your-font segment-korean-freeform <photo...> [-d workdir] [--delta N] [--cap N]
-  draw-your-font build   [-d workdir] (--labels labels.json | --chars "ABC…" | --charset name)
+  kor-your-font template [-o template.pdf] [--charset minimal|spanish]
+  kor-your-font template-korean [-o korean-template.pdf] [--label-font font.ttf]
+  kor-your-font segment <photo...> [-d workdir] [--delta N] [--cap N]
+  kor-your-font segment-korean <page-photo...> [-d workdir] [--delta N] [--cap N]
+  kor-your-font segment-korean-freeform <photo...> [-d workdir] [--delta N] [--cap N]
+  kor-your-font build   [-d workdir] (--labels labels.json | --chars "ABC…" | --charset name)
                          [--name "My Handwriting"] [-o font.ttf] [--smooth 0..2]
                          [--weight=-2..2] [--formats ttf,woff,woff2,css]
                          (negative weight needs the = form: --weight=-1)
-  draw-your-font make    <photo...> (--chars "ABC…" | --charset name) [build options]
-  draw-your-font make-korean <photo...> --chars "안녕하세요Hello"
+  kor-your-font make    <photo...> (--chars "ABC…" | --charset name) [build options]
+  kor-your-font make-korean <photo...> --chars "안녕하세요Hello"
                          [build options]
-  draw-your-font make-korean-full <worksheet-page photos...>
+  kor-your-font make-korean-full <worksheet-page photos...>
                          [build options]
-  draw-your-font build-korean [-d workdir] --labels labels.json
+  kor-your-font build-korean [-d workdir] --labels labels.json
                          [--name "My Hangul Hand"] [--formats ttf,woff,woff2,css]
-  draw-your-font preview [-d workdir] [--text "…"] [-o preview.png]
+  kor-your-font preview [-d workdir] [--text "…"] [-o preview.png]
 
 Typical flows:
   1. Freeform photo, you know the order you wrote in:
-       draw-your-font make photo.jpg --chars "ABCabc" --name "My Hand"
+       kor-your-font make photo.jpg --chars "ABCabc" --name "My Hand"
   2. Printed template (order is the charset):
-       draw-your-font template -o template.pdf --charset minimal
+       kor-your-font template -o template.pdf --charset minimal
        # print, write, photograph, then:
-       draw-your-font make page1.jpg page2.jpg --charset minimal
+       kor-your-font make page1.jpg page2.jpg --charset minimal
   3. Agent-assisted (Claude labels the blobs):
-       draw-your-font segment photo.jpg -d work
+       kor-your-font segment photo.jpg -d work
        # inspect work/contact-1.png, write work/labels.json {"0":"A", …}
-       draw-your-font build -d work --labels work/labels.json
+       kor-your-font build -d work --labels work/labels.json
   4. Korean component template / labelled crops:
        # labels use L:ㄱ, V:ㅏ, T:ㄱ (67 components total)
-       draw-your-font build-korean -d work --labels work/korean-labels.json
+       kor-your-font build-korean -d work --labels work/korean-labels.json
   5. Freeform Korean partial font (write blocks in the exact order, with a
      clear one-syllable gap):
-       draw-your-font make-korean note.jpg --chars "안녕하세요" --name "My Note"
+       kor-your-font make-korean note.jpg --chars "안녕하세요" --name "My Note"
   6. Complete Korean font in one command (two completed worksheet pages):
-       draw-your-font make-korean-full page-1.jpg page-2.jpg --name "My Hangul Hand"
+       kor-your-font make-korean-full page-1.jpg page-2.jpg --name "My Hangul Hand"
 `;
 
 const OPTS = {

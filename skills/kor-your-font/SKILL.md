@@ -1,9 +1,9 @@
 ---
-name: draw-your-font
+name: kor-your-font
 description: Turn a photo of handwriting into a real installable font (TTF/WOFF/WOFF2). Use when the user shares a photo of handwritten letters and wants a font, asks to "make my font", "handwriting font", "turn my handwriting into a font", "font from this photo/image", asks for a handwriting font template, or wants to refine a font made earlier (smoother, thicker, fix a letter). Not for choosing, recommending, or identifying existing fonts - only for creating a font from the user's own handwriting.
 ---
 
-# draw-your-font
+# kor-your-font
 
 Photo of handwritten letters in → installable font out. You do the seeing
 (find and label letters, judge quality); the CLI does all geometry (trace,
@@ -17,7 +17,7 @@ command wherever the examples below show `$DYF` - shell variables do not
 persist between tool calls, so paste the real command each time.
 
 If it errors, run `npm install` where it tells you (or `npm i -g
-draw-your-font`) and retry. Requires Node ≥ 18. Everything runs locally;
+kor-your-font`) and retry. Requires Node ≥ 18. Everything runs locally;
 nothing is uploaded.
 
 ## Decide the flow
