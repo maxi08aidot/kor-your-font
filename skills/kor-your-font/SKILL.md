@@ -1,13 +1,14 @@
 ---
 name: kor-your-font
-description: Turn a photo of handwriting into a real installable font (TTF/WOFF/WOFF2). Use when the user shares a photo of handwritten letters and wants a font, asks to "make my font", "handwriting font", "turn my handwriting into a font", "font from this photo/image", asks for a handwriting font template, or wants to refine a font made earlier (smoother, thicker, fix a letter). Not for choosing, recommending, or identifying existing fonts - only for creating a font from the user's own handwriting.
+description: Turn a photo of handwriting into a real installable font (TTF/WOFF/WOFF2), with full Hangul support. Use when the user shares a photo of handwritten letters and wants a font, asks to "make my font", "handwriting font", "turn my handwriting into a font", "font from this photo/image", asks for a handwriting font template, or wants to refine a font made earlier (smoother, thicker, fix a letter). Also for Korean: 손글씨 폰트, 내 손글씨로 폰트 만들기, 한글 폰트 만들기, 캘리그라피 폰트, 손글씨 사진으로 폰트. Not for choosing, recommending, or identifying existing fonts - only for creating a font from the user's own handwriting.
 ---
 
 # kor-your-font
 
-Photo of handwritten letters in → installable font out. You do the seeing
-(find and label letters, judge quality); the CLI does all geometry (trace,
-metrics, font assembly). Never edit SVG paths or coordinates yourself.
+Photo of handwritten letters in → installable font out. The CLI does all
+geometry (trace, metrics, font assembly) and all defect *measurement*; you
+supply the text, its line structure, and judgement on the few glyphs geometry
+cannot decide. Never edit SVG paths or coordinates yourself.
 
 ## Setup (once per session)
 
@@ -24,8 +25,9 @@ nothing is uploaded.
 
 - **User has no photo yet** → offer the template: print, write, photograph.
 - **User wants a Korean/Hangul handwriting font** → if they need only a known
-  set of syllables, use the Freeform Korean partial-font flow below. Use the
-  worksheet only when they need `가`–`힣` coverage.
+  set of syllables, use the Freeform Korean flow below (measured loop:
+  `make-korean` → `refine` → `review` → `audit`). Use the worksheet only when
+  they need `가`–`힣` coverage.
 - **User shares photo(s) of handwriting** → main flow below.
 - **User pasted an image but there is no file path** → you can see it, but the
   CLI needs a file. Ask them to drag the image file into the terminal (that
@@ -50,44 +52,6 @@ light grey and vanishes during processing - only their ink survives.
 ```bash
 $DYF segment photo1.jpg photo2.jpg -d work
 ```
-
-## Korean worksheet flow
-
-Modern Hangul is produced from 67 handwritten components: 19 leading
-consonants, 21 vowels, and 27 final consonants. The CLI composes all 11,172
-modern syllables after tracing them. The user writes components, not every
-syllable.
-
-```bash
-$DYF template-korean -o korean-template.pdf
-# After the user photographs both complete pages:
-$DYF make-korean-full korean-page-1.jpg korean-page-2.jpg -d korean-work \
-  --name "User's Hangul Hand" --formats ttf,woff,woff2,css
-```
-
-Tell the user to use a dark pen and photograph the *full* flat worksheet from
-above. `make-korean-full` uses known cell positions, so disconnected strokes in
-one jamo remain one source glyph. It creates role labels automatically; do not
-replace them with ordinary one-character labels. Inspect
-`korean-work/korean-preview.png` before delivery. If a component is faint or
-missing, re-shoot the relevant complete worksheet page and rerun the command
-in a fresh work directory.
-
-## Freeform Korean partial-font flow
-
-For a title, note, or known UI strings, the user does not need to write 67
-jamo. Ask them to write only the needed completed Hangul syllables and Latin
-characters, left-to-right, with a gap at least as wide as one syllable between
-blocks. They must provide the exact written sequence.
-
-```bash
-$DYF make-korean note.jpg --chars "오늘의기록Hello" --name "My Note"
-```
-
-This is a partial font: it contains only the written syllables/characters.
-Do not say that it generates other Hangul syllables. Read the contact sheet
-and preview before delivering; if two blocks merged or a jamo was split into a
-separate candidate, ask for a re-shoot with wider spacing.
 
 **2. Look, then label.** Read `work/contact-1.png` (one per photo): every
 detected blob is numbered. This is the step where your eyes matter - check:
@@ -119,8 +83,18 @@ $DYF build -d work --labels work/labels.json --name "Dan's Hand"
 
 Name the font after the user (ask if unclear - one short question max).
 
-**4. Judge before delivering.** Read `work/preview.png` and `work/glyphs.png`
-and critique like an art director:
+**4. Judge one glyph at a time, against its own source.** Do **not** critique
+a grid of small glyphs in `glyphs.png` and call that a review. That method is
+unreliable in both directions: it passes glyphs that are badly broken, and it
+"finds" defects in glyphs that are fine. Two rules, always:
+
+- Compare each glyph with **its own source region** - `work/crops/<id>.png`
+  against what the font draws for it. (Korean freeform: `$DYF review` builds
+  exactly those side-by-side sheets for you.)
+- Never judge against your memory of how the character *should* look. The
+  question is only whether the glyph matches the ink the user actually wrote.
+
+Then fix by cause:
 
 - Broken or blotchy letters (bad trace) → often a faint pen stroke; try
   `--weight 1`, or ask for a re-shoot of just that letter.
@@ -147,6 +121,143 @@ without pushing:
   work2` - then relabel from the new contact sheets (blob ids renumber; the
   old labels.json does not carry over) and build from the new workdir.
 
+## Korean worksheet flow
+
+Modern Hangul is produced from 67 handwritten components: 19 leading
+consonants, 21 vowels, and 27 final consonants. The CLI composes all 11,172
+modern syllables after tracing them. The user writes components, not every
+syllable.
+
+```bash
+$DYF template-korean -o korean-template.pdf
+# After the user photographs both complete pages:
+$DYF make-korean-full korean-page-1.jpg korean-page-2.jpg -d korean-work \
+  --name "User's Hangul Hand" --formats ttf,woff,woff2,css
+```
+
+Tell the user to use a dark pen and photograph the *full* flat worksheet from
+above. `make-korean-full` uses known cell positions, so disconnected strokes in
+one jamo remain one source glyph. It creates role labels automatically; do not
+replace them with ordinary one-character labels. Inspect
+`korean-work/korean-preview.png` before delivery. If a component is faint or
+missing, re-shoot the relevant complete worksheet page and rerun the command
+in a fresh work directory.
+
+## Freeform Korean partial-font flow
+
+For a title, note, or known UI strings, the user does not need to write 67
+jamo - only the syllables and Latin characters they need. This is a **partial
+font**: it contains only what was written. Never say it generates other Hangul
+syllables.
+
+Run the loop below in order. It is measured, not eyeballed: `refine` and
+`audit` settle everything geometry can settle, so your judgement is spent on
+only the couple of glyphs it cannot.
+
+**1. Get the text - including its line structure.** Ask for the exact written
+sequence *and how it breaks across lines*. In `--chars`, separate the lines of
+writing with `/` or a real newline:
+
+```bash
+--chars "노력한다고 항상/성공할순 없지만/알아둬"
+```
+
+Without separators the lines fuse into one run and a multi-line photo can
+collapse into one or two glyph candidates.
+
+**2. First pass.**
+
+```bash
+$DYF make-korean note.jpg --chars "노력한다고 항상/성공할순 없지만/알아둬" \
+  -d korean-work --name "My Note"
+```
+
+**3. `refine` - close severed strokes automatically.**
+
+```bash
+$DYF refine note.jpg --chars "노력한다고 항상/성공할순 없지만/알아둬" \
+  -d korean-work --name "My Note"
+```
+
+It loops build → audit → widen the boxes that are clipping strokes → rebuild,
+until nothing is clipped or no further correction is proposed, and writes the
+result to `korean-work/box-fixes.json` (override the path with `--boxes`). On
+a real five-line brush photo this cut missing ink from 5,289 px to 75 px in
+two rounds. Run it before looking at anything.
+
+**4. `review` - then read the sheets.**
+
+```bash
+$DYF review -d korean-work -o korean-work/review.png
+```
+
+It takes no `--chars`; it reads the text from the workdir. For every unique
+character it writes the region of the source photo on top and the glyph the
+font actually draws below, split across several images so each glyph is large
+enough to judge honestly. Judge each glyph **against its own source region in
+the same image** - never against your memory of the character, and never by
+scanning a grid of small glyphs.
+
+**5. Hand-correct only the glyphs still wrong.** `--boxes` takes hand-corrected
+glyph boxes, keyed by the id drawn on the contact sheet, in contact-sheet
+pixels:
+
+```json
+{"7": [x0, y0, x1, y1]}
+```
+
+An override replaces one box in place - the count and order of glyphs never
+change. To place an edge, look at the ink profile and cut at a **valley**
+rather than guessing a coordinate. Edit `korean-work/box-fixes.json` (the file
+`refine` already wrote) and rebuild:
+
+```bash
+$DYF make-korean note.jpg --chars "…" -d korean-work \
+  --boxes korean-work/box-fixes.json --name "My Note"
+```
+
+**Hand-supplied boxes are pinned.** Every box present in that file when a
+command starts is treated as a human decision: `audit` will not fail it, and
+prints `(pinned by hand)` where it would otherwise print `<- clipped`;
+`refine` will not widen or overwrite it. This is what lets you deliberately
+*tighten* a box to cut a neighbour's stroke away - without pinning, that reads
+as a clipped glyph and the next `refine` would silently undo it. So keep your
+edits in the file you pass to `refine` and `audit`, and re-run `refine` freely
+afterwards.
+
+**6. `audit` - the delivery gate.**
+
+```bash
+$DYF audit -d korean-work --chars "노력한다고 항상/…"
+```
+
+It prints an objective defect report and exits non-zero while defects remain:
+
+- `clipped` - the share of the ink a glyph owns that fell outside its own box.
+  A severed stroke: the glyph is missing part of itself. Any unpinned glyph
+  over 2% fails.
+- `orphan` - ink that no glyph claims at all, as a share of all ink on the
+  page. Those strokes are missing from the font entirely. Over 2% fails.
+- `foreign` - **not a defect gate.** In cursive Korean two syllables genuinely
+  share brush strokes, so high `foreign` values are normal. Rules that
+  minimised `foreign` were tried and made the output worse - one deleted a
+  syllable's main stroke outright. Report the number; never tune against it.
+
+Deliver when `clipped` and `orphan` are clean **and** the review sheets are
+clean.
+
+**On hard cursive or brush input, full automation is not achievable.** When
+two syllables share a physical brush stroke, which ink belongs to which
+syllable is genuinely absent from the geometry - no threshold recovers it, and
+no re-shoot fixes it either, because the strokes are shared on paper. The
+loop's job is to remove every defect that *is* objectively decidable, so that
+human/agent judgement is needed for only a couple of glyphs. Say this plainly
+to the user instead of promising a clean automatic result.
+
+Capture advice for a *new* photo (not a remedy for one you already have):
+write blocks left-to-right with a gap at least as wide as one syllable between
+them, and keep the lines clearly separated.
+
 ## Refine (conversational iteration)
 
 | User says | Do |
@@ -156,6 +267,7 @@ without pushing:
 | "thinner / lighter" | `build … --weight=-1` (negative needs the `=` form) |
 | "the g looks bad" | show them `work/crops/<id>.png` for that letter; offer re-shoot or smooth |
 | "wrong letter" / swap | edit labels.json, rebuild |
+| "this Korean syllable is wrong" | `$DYF review` that workdir, then correct just that box in `box-fixes.json` and rebuild with `--boxes` |
 | "give me woff2 / web" | `build … --formats ttf,woff,woff2,css` |
 | custom preview text | `$DYF preview -d work --text "…"` (after a build) |
 
@@ -176,6 +288,7 @@ delivery on this - it's advice, not a blocker.
 
 ## Troubleshooting
 
-Segmentation found far too many / too few blobs, grey guide lines surviving,
-shadow blobs, faint ballpoint strokes → see
+Segmentation found far too many / too few blobs, a multi-line photo collapsing
+to one glyph, strokes eaten away, a glyph carrying a neighbour's stroke or
+missing a jamo, grey guide lines surviving, faint ballpoint strokes → see
 [references/troubleshooting.md](references/troubleshooting.md).
