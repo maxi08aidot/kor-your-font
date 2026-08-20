@@ -12,7 +12,7 @@ const MAX_SIDE = 4200;
  *   cap:   absolute grey ceiling for ink (after normalise) - kills printed grey guides
  * @returns {{ink: Uint8Array, width: number, height: number, gray: Buffer}} ink: 1 = ink
  */
-async function binarize(file, { delta = 40, cap = 165, normalise = true } = {}) {
+async function binarize(file, { delta = 40, cap = 165, normalise = false } = {}) {
   const dims = await sharp(file, { limitInputPixels: 1e9 }).metadata();
   if ((dims.width || 0) < 16 || (dims.height || 0) < 16) {
     throw new Error(`Image is too small to process (${dims.width}x${dims.height}) - need at least 16x16 px.`);
@@ -20,9 +20,13 @@ async function binarize(file, { delta = 40, cap = 165, normalise = true } = {}) 
   let pipeline = sharp(file, { limitInputPixels: 1e9 })
     .rotate() // honour EXIF orientation
     .grayscale();
-  // Normalisation is useful for scanned worksheets, but can amplify the
-  // pixel grid of a photographed screen into apparent "ink". Freeform notes
-  // deliberately retain their natural luminance instead.
+  // Normalisation is off by default, and photographs are why. It stretches the
+  // histogram between percentiles, and a worksheet is ~98% paper - so on a
+  // photo it takes the paper's own narrow range and ramps it across the full
+  // scale, turning ordinary uneven lighting into a hard diagonal of "ink". On
+  // one shaded test page it read 69% of the sheet as ink; with it off, 1.9%,
+  // the true figure. The local-background threshold below is what handles
+  // shading, and it does not need the contrast stretched first.
   if (normalise) pipeline = pipeline.normalise();
   const { data, info } = await pipeline
     .resize({ width: MAX_SIDE, height: MAX_SIDE, fit: 'inside', withoutEnlargement: true })

@@ -280,9 +280,46 @@ function composeGeometry() {
   }
 }
 
+
+// Every photograph of a worksheet has uneven lighting. Contrast-stretching it
+// first turns that shading into ink: a sheet is almost all paper, so the
+// stretch takes the paper's own narrow range and ramps it across the full
+// scale. A page that read 69% ink this way still produced 67 "components" and
+// a valid 11,172-glyph font, so nothing downstream noticed.
+async function shadedPageE2E() {
+  const { binarize } = require('../src/capture');
+  const dir = path.join(os.tmpdir(), 'kor-your-font-shaded');
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(dir, { recursive: true });
+  // Proportions that matter: mostly paper, and light falling unevenly across
+  // it - which is any worksheet photographed by hand.
+  const W = 1400, H = 1900;
+  const marks = [];
+  for (let i = 0; i < 12; i++) {
+    const x = 160 + (i % 4) * 320, y = 300 + Math.floor(i / 4) * 460;
+    marks.push(`<path d="M${x} ${y}L${x + 80} ${y}L${x + 80} ${y + 80}" fill="none" stroke="#141414" stroke-width="14"/>`);
+  }
+  const page = path.join(dir, 'page.jpg');
+  await sharp(Buffer.from(
+    `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">`
+    + `<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">`
+    + `<stop offset="0%" stop-color="#ffffff"/><stop offset="60%" stop-color="#efe9dd"/>`
+    + `<stop offset="100%" stop-color="#d8d0c2"/>`
+    + `</linearGradient></defs><rect width="100%" height="100%" fill="url(#g)"/>${marks.join('')}</svg>`
+  )).jpeg({ quality: 82 }).toFile(page);
+
+  const { ink } = await binarize(page, {});
+  let inked = 0;
+  for (const v of ink) inked += v;
+  const share = inked / ink.length;
+  assert.ok(share < 0.10,
+    `shading must not be read as ink; ${(share * 100).toFixed(1)}% of a lightly shaded page came back inked`);
+  assert.ok(share > 0.005, 'the strokes themselves must still be found');
+}
+
 composeGeometry();
 
-Promise.all([koreanTemplateE2E(), koreanFreeformE2E(), koreanMultiLineE2E(), foreignInkE2E(), koreanToolingE2E()]).then(() => console.log('hangul e2e OK - worksheet, freeform, multi-line, foreign-ink and audit/review/refine flows work.')).catch((err) => {
+Promise.all([koreanTemplateE2E(), koreanFreeformE2E(), koreanMultiLineE2E(), foreignInkE2E(), koreanToolingE2E(), shadedPageE2E()]).then(() => console.log('hangul e2e OK - worksheet, freeform, multi-line, foreign-ink and audit/review/refine flows work.')).catch((err) => {
   console.error(err);
   process.exit(1);
 });
