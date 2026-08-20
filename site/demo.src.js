@@ -4,7 +4,7 @@
 // Build: npm run build:demo
 import { potrace, init as initPotrace } from 'esm-potrace-wasm';
 import svgpathLib from 'svgpath';
-const { connectedComponents, mergeParts, orderBlobs } = require('../src/blob-core');
+const { connectedComponents, mergeParts, orderBlobs, labelComponents, assignComponents } = require('../src/blob-core');
 const { placeGlyph } = require('../src/metrics');
 const { buildTTF } = require('../src/assemble');
 
@@ -526,18 +526,43 @@ function segmentImage(imgData, bias, mode, chars, override) {
   return { ink, blobs: orderBlobs(boxes), width };
 }
 
-function cropToImageData(ink, imgWidth, blob) {
+function cropToImageData(ink, imgWidth, blob, parts, owner, ownIndex) {
   const w = blob.x1 - blob.x0 + 1, h = blob.y1 - blob.y0 + 1;
   const cw = w + 2 * PAD, ch = h + 2 * PAD;
+  // Boxes overlap in cursive writing, so "inside the box" is not the same as
+  // "belongs to this glyph". Every stroke belongs to whichever box holds most
+  // of it; judging that inside one box cannot work, because a neighbour's
+  // stroke can be a large share of a small glyph and look native.
+  const inside = new Map();
+  if (parts) {
+    for (let y = 0; y < h; y++) {
+      const src = (blob.y0 + y) * imgWidth + blob.x0;
+      for (let x = 0; x < w; x++) {
+        if (!ink[src + x]) continue;
+        const id = parts.labels[src + x];
+        inside.set(id, (inside.get(id) || 0) + 1);
+      }
+    }
+  }
+  let mainInside = 0;
+  for (const n of inside.values()) if (n > mainInside) mainInside = n;
+  const keep = (id) => {
+    const here = inside.get(id) || 0;
+    if (here < 0.005 * mainInside) return false;   // paper grain, JPEG specks
+    if (!owner) return here >= 0.5 * parts.areas[id];
+    if (owner.get(id) === ownIndex) return true;
+    // A stroke the cut runs through has to survive in both halves.
+    return here >= 0.25 * parts.areas[id];
+  };
   const img = new ImageData(cw, ch);
   img.data.fill(255);
   for (let y = 0; y < h; y++) {
     const src = (blob.y0 + y) * imgWidth + blob.x0;
     for (let x = 0; x < w; x++) {
-      if (ink[src + x]) {
-        const p = ((y + PAD) * cw + (x + PAD)) * 4;
-        img.data[p] = img.data[p + 1] = img.data[p + 2] = 0;
-      }
+      if (!ink[src + x]) continue;
+      if (parts && !keep(parts.labels[src + x])) continue;
+      const p = ((y + PAD) * cw + (x + PAD)) * 4;
+      img.data[p] = img.data[p + 1] = img.data[p + 2] = 0;
     }
   }
   return img;
@@ -577,22 +602,29 @@ function clampBox(b, width, height) {
 async function buildFont(imgData, chars, name, bias, mode, onProgress, override) {
   const { ink, blobs, width } = segmentImage(imgData, bias, mode, chars, override);
   const wanted = wantedChars(chars, mode);
+  // Ownership is decided once across the whole page, never inside a single box.
+  const parts = labelComponents(ink, width, imgData.height);
+  const owner = assignComponents(ink, width, blobs, parts);
   const n = Math.min(blobs.length, wanted.length);
   const glyphs = [];
+  const empty = [];
   const seen = new Set();
   for (let i = 0; i < n; i++) {
     const char = wanted[i];
     if (seen.has(char)) continue;
     onProgress(`tracing ${i + 1}/${n}…`);
-    const crop = cropToImageData(ink, width, blobs[i]);
+    const crop = cropToImageData(ink, width, blobs[i], parts, owner, i);
     const d = await traceCrop(crop);
-    if (!d) continue;
+    // Nothing traced: every stroke in this box belongs to a neighbour. Saying
+    // so is the point - the box is in the wrong place and only the reader can
+    // move it.
+    if (!d) { empty.push(char); continue; }
     seen.add(char);
     glyphs.push({ char, ...placeGlyph(d, { width: crop.width, height: crop.height }, PAD, char) });
   }
   if (!glyphs.length) throw new Error('no glyphs traced');
   return { ttf: buildTTF(name, glyphs), glyphCount: glyphs.length, blobCount: blobs.length,
-    wantedCount: wanted.length, blobs };
+    wantedCount: wanted.length, blobs, empty };
 }
 
 // ---------- UI ----------
@@ -623,7 +655,7 @@ async function run() {
     const name = ($('demo-name').value.trim() || 'My Hand').slice(0, 40);
     const bias = Number($('demo-delta').value);
     const mode = effectiveMode();
-    const { ttf, glyphCount, blobCount, wantedCount, blobs } = await buildFont(
+    const { ttf, glyphCount, blobCount, wantedCount, blobs, empty } = await buildFont(
       lastImage, $('demo-chars').value, name, bias, mode, (t) => { status.textContent = t; },
       editBoxes
     );
@@ -646,6 +678,9 @@ async function run() {
     let note = `${blobCount}개 필체 덩어리에서 ${glyphCount}개 글자를 추출했습니다.`;
     if (blobCount !== wantedCount) {
       note += ` 입력한 글자는 ${wantedCount}개입니다. 글자 연결이 어색하면 쓴 순서를 확인하거나 고급 설정에서 잉크 감도를 조절하세요.`;
+    }
+    if (empty.length) {
+      note += ` ${empty.join(', ')}는 박스 안에 자기 획이 없어 빠졌습니다 - 사진에서 그 박스를 옮겨주세요.`;
     }
     status.textContent = note;
   } catch (e) {

@@ -4,7 +4,7 @@
 const path = require('path');
 const fs = require('fs');
 const sharp = require('sharp');
-const { connectedComponents, mergeParts, orderBlobs } = require('./blob-core');
+const { connectedComponents, mergeParts, orderBlobs, labelComponents, assignComponents } = require('./blob-core');
 
 const PAD = 8; // white border around each crop, px
 
@@ -16,61 +16,6 @@ const PAD = 8; // white border around each crop, px
 // is that its stroke *continues outside* the box - only a fragment of it landed
 // here - while the glyph's own detached pieces (the circle of an ieung, the
 // short stroke of a vowel) lie wholly within.
-function labelComponents(ink, width, height) {
-  const labels = new Int32Array(width * height);
-  const stack = new Int32Array(width * height);
-  const areas = [0];
-  for (let start = 0; start < ink.length; start++) {
-    if (!ink[start] || labels[start]) continue;
-    const id = areas.length;
-    let sp = 0, area = 0;
-    stack[sp++] = start;
-    labels[start] = id;
-    while (sp) {
-      const p = stack[--sp];
-      const x = p % width, y = (p / width) | 0;
-      area++;
-      for (let dy = -1; dy <= 1; dy++) {
-        const ny = y + dy;
-        if (ny < 0 || ny >= height) continue;
-        for (let dx = -1; dx <= 1; dx++) {
-          const nx = x + dx;
-          if (nx < 0 || nx >= width) continue;
-          const np = ny * width + nx;
-          if (ink[np] && !labels[np]) { labels[np] = id; stack[sp++] = np; }
-        }
-      }
-    }
-    areas.push(area);
-  }
-  return { labels, areas };
-}
-
-// Decide, once for the whole page, which glyph each ink component belongs to:
-// the one whose box contains most of it.
-function assignComponents(ink, width, boxes, parts) {
-  const tally = new Map();
-  boxes.forEach((box, index) => {
-    for (let y = box.y0; y <= box.y1; y++) {
-      const row = y * width;
-      for (let x = box.x0; x <= box.x1; x++) {
-        if (!ink[row + x]) continue;
-        const id = parts.labels[row + x];
-        let counts = tally.get(id);
-        if (!counts) { counts = new Map(); tally.set(id, counts); }
-        counts.set(index, (counts.get(index) || 0) + 1);
-      }
-    }
-  });
-  const owner = new Map();
-  for (const [id, counts] of tally) {
-    let best = -1, bestN = 0;
-    for (const [index, n] of counts) if (n > bestN) { bestN = n; best = index; }
-    owner.set(id, best);
-  }
-  return owner;
-}
-
 async function writeCrop(ink, width, blob, file, parts, owner, ownIndex) {
   const w = blob.x1 - blob.x0 + 1, h = blob.y1 - blob.y0 + 1;
   const cw = w + 2 * PAD, ch = h + 2 * PAD;
