@@ -168,6 +168,12 @@ consonants, 21 vowels, and 27 final consonants. The CLI composes all 11,172
 modern syllables after tracing them. The user writes components, not every
 syllable.
 
+The sheet has 84 cells, so the 17 that the jamo do not need carry the digits
+0-9 and `. , ? ! - ( )`. These are written once and used as themselves -
+nothing composes them - and without them the font cannot set a date or a
+price, which is most real Korean text. Say so if the user asks why they are
+writing numbers on a Hangul worksheet.
+
 ```bash
 $DYF template-korean -o korean-template.pdf
 # After the user photographs both complete pages:

@@ -285,22 +285,25 @@ async function buildKorean(dir, opt) {
   const { trace, adjustWeight } = require('./trace');
   const { buildTTF, toWoff, toWoff2, fontFaceCSS } = require('./assemble');
   const { renderPreview } = require('./preview');
-  const { requiredComponents, placeComponent, buildHangulGlyphs } = require('./hangul');
+  const { requiredComponents, extraCharacters, placeComponent, buildHangulGlyphs } = require('./hangul');
+  const { placeGlyph } = require('./metrics');
   const blobs = readJSON(path.join(dir, 'blobs.json'), 'Run segment first.');
   const labels = readJSON(opt.labels, '');
   const required = new Set(requiredComponents().map(({ key }) => key));
+  const extras = new Map(extraCharacters().map((e) => [e.key, e.char]));
   const parts = {};
+  const literals = [];
   const weight = Math.max(-2, Math.min(2, Number(opt.weight)));
   const smooth = Number(opt.smooth);
 
   for (const blob of blobs.blobs) {
     const label = labels[blob.id];
     if (!label) continue;
-    if (!required.has(label)) {
+    if (!required.has(label) && !extras.has(label)) {
       console.warn(`  ! "${label}" (blob ${blob.id}) is not a supported Hangul component, skipped`);
       continue;
     }
-    if (parts[label]) {
+    if (parts[label] || literals.some((g) => g.key === label)) {
       console.warn(`  ! duplicate "${label}" (blob ${blob.id}) - keeping the first one`);
       continue;
     }
@@ -311,10 +314,19 @@ async function buildKorean(dir, opt) {
       console.warn(`  ! blob ${blob.id} ("${label}") traced to nothing - skipped`);
       continue;
     }
+    if (extras.has(label)) {
+      // Digits and punctuation are used as written, not composed, so they get
+      // the ordinary Latin metrics - a digit is not a square block.
+      const char = extras.get(label);
+      const placed = placeGlyph(d, blob.cropSize, blobs.pad, char);
+      literals.push({ key: label, char, d: placed.d, advance: placed.advance });
+      continue;
+    }
     parts[label] = placeComponent(d, blob.cropSize, blobs.pad);
   }
 
-  const glyphs = buildHangulGlyphs(parts);
+  const glyphs = [...buildHangulGlyphs(parts), ...literals.map(({ char, d, advance }) => ({ char, d, advance }))];
+  if (literals.length) console.log(`  + ${literals.length} written character(s): ${literals.map((l) => l.char).join(' ')}`);
   const name = opt.name;
   const base = opt.out ? opt.out.replace(/\.\w+$/, '') : path.join(dir, name.replace(/\s+/g, ''));
   fs.mkdirSync(path.dirname(path.resolve(base)), { recursive: true });

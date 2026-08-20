@@ -20,6 +20,21 @@ function componentKey(role, char) {
   return `${role}:${char}`;
 }
 
+// A Hangul-only font cannot set a date. The worksheet composes 11,172
+// syllables from 67 jamo, which leaves 17 of its 84 cells empty - exactly
+// enough for the digits and the punctuation that ordinary Korean prose needs.
+// These are written once and used as themselves; nothing composes them.
+const EXTRAS = [...'0123456789.,?!-()'];
+
+function extraCharacters() {
+  return EXTRAS.map((char) => ({ role: 'X', char, key: componentKey('X', char) }));
+}
+
+// Everything the printed worksheet asks for, in cell order.
+function worksheetItems() {
+  return [...requiredComponents(), ...extraCharacters()];
+}
+
 function requiredComponents() {
   return [
     ...LEADS.map((char) => ({ role: 'L', char, key: componentKey('L', char) })),
@@ -169,7 +184,7 @@ function defaultKoreanLabelFont() {
 function generateKoreanTemplate(out, { labelFont } = {}) {
   const fs = require('fs');
   const PDFDocument = require('pdfkit');
-  const parts = requiredComponents();
+  const parts = worksheetItems();
   const koreanFont = labelFont || defaultKoreanLabelFont();
   if (koreanFont && !fs.existsSync(koreanFont)) throw new Error(`Korean label font not found: ${koreanFont}`);
   const doc = new PDFDocument({ size: 'A4', margin: 0 });
@@ -192,7 +207,8 @@ function generateKoreanTemplate(out, { labelFont } = {}) {
       const x = TEMPLATE.margin + (i % TEMPLATE.cols) * cw;
       const y = TEMPLATE.margin + TEMPLATE.header + Math.floor(i / TEMPLATE.cols) * ch;
       doc.rect(x, y, cw - 4, ch - 4).lineWidth(0.8).stroke('#c8c8c8');
-      const role = part.role === 'L' ? 'initial' : part.role === 'V' ? 'vowel' : 'final';
+      const role = part.role === 'L' ? 'initial' : part.role === 'V' ? 'vowel'
+        : part.role === 'T' ? 'final' : 'as written';
       if (koreanFont) {
         doc.font(koreanFont).fontSize(14).fillColor('#aaa').text(`${role} ${part.char}`, x + 3, y + 3, { lineBreak: false });
         doc.font('Helvetica');
@@ -219,7 +235,7 @@ async function segmentKoreanTemplate(photos, dir, { delta, cap } = {}) {
   const fs = require('fs');
   const path = require('path');
   const { captureCells } = require('./cells');
-  const parts = requiredComponents();
+  const parts = worksheetItems();
   const items = parts.map((part) => ({ label: part.key, name: part.key }));
   const { pad, photos: used, blobs, labels, clipped } =
     await captureCells(photos, dir, items, { delta, cap, pageLabel: 'korean-page' });
@@ -750,7 +766,7 @@ async function segmentKoreanFreeform(photos, dir, { delta, cap, expectedChars, b
 
 module.exports = {
   LEADS, VOWELS, FINALS, HANGUL_START, HANGUL_COUNT,
-  componentKey, requiredComponents, decomposeSyllable, placeComponent, composeSyllable, buildHangulGlyphs,
+  componentKey, requiredComponents, extraCharacters, worksheetItems, decomposeSyllable, placeComponent, composeSyllable, buildHangulGlyphs,
   defaultKoreanLabelFont, generateKoreanTemplate, koreanTemplateMapFile, segmentKoreanTemplate,
   groupSyllableParts, groupPartsForExpectedText, segmentKoreanFreeform,
   splitIntoLines, parseExpectedLines,

@@ -54,13 +54,15 @@ async function koreanTemplateE2E() {
   const dir = path.join(os.tmpdir(), 'kor-your-font-hangul-e2e');
   fs.rmSync(dir, { recursive: true, force: true });
   fs.mkdirSync(dir, { recursive: true });
+  const { worksheetItems } = require('../src/hangul');
+  const cells = worksheetItems().length; // 67 jamo + the digits and punctuation
   const photos = [];
   // Synthetic, aligned worksheet pages. Every cell contains two disconnected
   // strokes; this proves cell capture keeps a jamo together rather than
   // treating its parts as separate glyphs.
   for (let page = 0; page < 2; page++) {
     const paths = [];
-    for (let i = 0; i < 42 && page * 42 + i < 67; i++) {
+    for (let i = 0; i < 42 && page * 42 + i < cells; i++) {
       const col = i % 6, row = Math.floor(i / 6);
       const x = 40 + col * (515.28 / 6), y = 110 + row * (691.89 / 7);
       paths.push(`<path d="M${x + 25} ${y + 32}L${x + 55} ${y + 58} M${x + 66} ${y + 30}L${x + 42} ${y + 66}" fill="none" stroke="#111" stroke-width="7"/>`);
@@ -71,9 +73,17 @@ async function koreanTemplateE2E() {
   }
   const work = path.join(dir, 'work');
   const output = execFileSync(process.execPath, [path.join(root, 'src/cli.js'), 'make-korean-full', ...photos, '-d', work, '--name', 'Hangul Hand'], { encoding: 'utf8' });
-  assert.match(output, /Built 11172 Hangul syllables/);
+  // 11,172 composed syllables plus the characters written as themselves.
+  assert.match(output, /Built 11189 Hangul syllables/);
+  assert.match(output, /17 written character/);
   assert.ok(fs.existsSync(path.join(work, 'HangulHand.ttf')));
   assert.ok(fs.existsSync(path.join(work, 'korean-preview.png')));
+
+  // A Hangul-only font cannot set a date. This is why the spare cells exist.
+  const built = opentype.loadSync(path.join(work, 'HangulHand.ttf'));
+  for (const c of '2026년 8월 20일. 값은 1,234원 (부가세 포함)'.replace(/\s/g, '')) {
+    assert.notEqual(built.charToGlyph(c).index, 0, `${c} must be in a complete Korean font`);
+  }
 }
 
 async function koreanFreeformE2E() {
