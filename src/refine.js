@@ -11,6 +11,17 @@ const { audit, proposeBoxes, CLIPPED_LIMIT } = require('./audit');
 
 const MAX_ROUNDS = 8;
 
+// Each round starts from a clean workdir, but the corrections file is allowed
+// to live inside it - that is the documented default. Rewrite the file after
+// clearing, or the loop deletes its own input, every round measures the same
+// unfixed build, and it reports "converged" having changed nothing.
+function reset(dir, boxesFile, boxes) {
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(dir, { recursive: true });
+  fs.mkdirSync(path.dirname(path.resolve(boxesFile)), { recursive: true });
+  fs.writeFileSync(boxesFile, JSON.stringify(boxes, null, 2) + '\n');
+}
+
 function build(photos, text, dir, boxesFile, name) {
   const args = [path.join(__dirname, 'cli.js'), 'make-korean', ...photos,
     '--chars', text, '-d', dir, '--name', name, '--formats', 'ttf'];
@@ -34,7 +45,7 @@ async function refine({ photos, text, dir, boxesFile, name = 'Refined', rounds =
   let best = null;
 
   for (let round = 1; round <= rounds; round++) {
-    fs.rmSync(dir, { recursive: true, force: true });
+    reset(dir, boxesFile, boxes);
     build(photos, text, dir, boxesFile, name);
     const result = await audit(dir, chars, { pinned });
     const clipped = result.rows.filter((r) => r.clipped > CLIPPED_LIMIT);
@@ -58,12 +69,10 @@ async function refine({ photos, text, dir, boxesFile, name = 'Refined', rounds =
     }
     if (!changed) { log('converged: no further correction to propose'); break; }
     boxes = next;
-    fs.writeFileSync(boxesFile, JSON.stringify(boxes, null, 2) + '\n');
   }
 
   // Never leave the run worse than the best round we saw.
-  if (best) fs.writeFileSync(boxesFile, JSON.stringify(best.boxes, null, 2) + '\n');
-  fs.rmSync(dir, { recursive: true, force: true });
+  reset(dir, boxesFile, best ? best.boxes : boxes);
   build(photos, text, dir, boxesFile, name);
   return audit(dir, chars, { pinned });
 }

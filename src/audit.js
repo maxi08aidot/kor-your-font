@@ -70,7 +70,17 @@ async function audit(dir, chars, { pinned = new Set() } = {}) {
     missing: ownedTotal[i] - insideOwned[i],
     box,
   }));
-  return { rows: rows.filter((r) => r.used), all: rows, orphan, total, parts, owner, width, height, ink };
+  // A blob whose crop traces to nothing is dropped from the font, and every
+  // measurement above still scores it as if it were there. That makes the
+  // worst possible defect - a character absent from the font entirely -
+  // invisible to the gate, so read back what the build actually produced.
+  let absent = [];
+  const manifestFile = path.join(dir, 'manifest.json');
+  if (fs.existsSync(manifestFile)) {
+    const built = new Set(Object.keys(JSON.parse(fs.readFileSync(manifestFile, 'utf8')).glyphs || {}));
+    absent = rows.filter((r) => r.used && r.char && !built.has(r.char)).map((r) => r.char);
+  }
+  return { rows: rows.filter((r) => r.used), all: rows, absent, orphan, total, parts, owner, width, height, ink };
 }
 
 // A glyph missing part of itself is fixed by growing its box to hold every
@@ -121,13 +131,15 @@ function formatReport(result) {
   const lines = [];
   const orphanShare = result.total ? result.orphan / result.total : 0;
   const bad = result.rows.filter((r) => r.clipped > CLIPPED_LIMIT && !r.pinned);
-  lines.push(`${result.rows.length} glyphs | clipped ${bad.length} | orphan ink ${result.orphan}px (${(orphanShare * 100).toFixed(2)}%)`);
+  const absent = result.absent || [];
+  lines.push(`${result.rows.length} glyphs | clipped ${bad.length} | orphan ink ${result.orphan}px (${(orphanShare * 100).toFixed(2)}%)`
+    + (absent.length ? ` | MISSING FROM FONT: ${absent.join(' ')}` : ''));
   for (const r of [...result.rows].sort((a, b) => b.clipped - a.clipped)) {
     if (r.clipped < 0.005 && r.foreign < 0.10) continue;
     const flag = r.clipped > CLIPPED_LIMIT ? (r.pinned ? '  (pinned by hand)' : '  <- clipped') : '';
     lines.push(`  ${String(r.id).padStart(2)} '${r.char}'  clipped ${(r.clipped * 100).toFixed(1).padStart(5)}%  foreign ${(r.foreign * 100).toFixed(1).padStart(5)}%${flag}`);
   }
-  return { text: lines.join('\n'), clean: bad.length === 0 && orphanShare <= ORPHAN_LIMIT };
+  return { text: lines.join('\n'), clean: bad.length === 0 && orphanShare <= ORPHAN_LIMIT && absent.length === 0 };
 }
 
 module.exports = { audit, proposeBoxes, formatReport, CLIPPED_LIMIT, ORPHAN_LIMIT };
