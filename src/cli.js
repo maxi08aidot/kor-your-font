@@ -7,7 +7,10 @@ const { parseArgs } = require('node:util');
 const USAGE = `kor-your-font - turn a photo of your handwriting into a real font
 
 Usage:
-  kor-your-font template [-o template.pdf] [--charset minimal|spanish]
+  kor-your-font template [-o template.pdf] (--charset minimal|spanish
+                         | --chars "가나다ABC123" [--label-font font.ttf])
+  kor-your-font segment-sheet <page photos...> --chars "가나다ABC123" [-d workdir]
+  kor-your-font make-sheet    <page photos...> --chars "가나다ABC123" [build options]
   kor-your-font template-korean [-o korean-template.pdf] [--label-font font.ttf]
   kor-your-font segment <photo...> [-d workdir] [--delta N] [--cap N]
   kor-your-font segment-korean <page-photo...> [-d workdir] [--delta N] [--cap N]
@@ -30,7 +33,7 @@ Usage:
                          [--name "My Hangul Hand"] [--formats ttf,woff,woff2,css]
   kor-your-font preview [-d workdir] [--text "…"] [-o preview.png]
 
-Checking a finished Korean font (see flow 7):
+Checking a finished font (see flow 8):
   kor-your-font audit  [-d workdir] --chars "…"        objective defect report
   kor-your-font review [-d workdir] [-o review.png]    source vs. what it draws
   kor-your-font refine <photo...> --chars "…" [-d workdir] [--boxes fixes.json]
@@ -54,7 +57,13 @@ Typical flows:
        kor-your-font make-korean note.jpg --chars "안녕하세요" --name "My Note"
   6. Complete Korean font in one command (two completed worksheet pages):
        kor-your-font make-korean-full page-1.jpg page-2.jpg --name "My Hangul Hand"
-  7. Cursive or brush Korean, where syllables share strokes - measure, do not guess:
+  7. Any character set you like, on a printed sheet - one per cell, so nothing
+     has to be recognised and nothing can be mis-ordered:
+       kor-your-font template --chars "가나다ABC123" -o sheet.pdf
+       # print, write one character per cell, photograph, then:
+       kor-your-font make-sheet page-1.jpg page-2.jpg --chars "가나다ABC123" \
+         --name "My Hand"
+  8. Cursive or brush Korean, where syllables share strokes - measure, do not guess:
        kor-your-font refine note.jpg --chars "1행/2행" -d work --boxes work/fixes.json
        kor-your-font review -d work          # then look at every glyph, large
        kor-your-font audit  -d work --chars "1행/2행"
@@ -94,7 +103,7 @@ async function main() {
   if (cmd === 'template') {
     const { generateTemplate } = require('./template');
     const out = opt.out || 'template.pdf';
-    await generateTemplate(out, { charset: opt.charset || 'minimal' });
+    await generateTemplate(out, { charset: opt.charset || 'minimal', chars: opt.chars, labelFont: opt['label-font'] });
     console.log(`Template written to ${out}. Print it, write with a dark pen, photograph each page.`);
     return;
   }
@@ -158,7 +167,27 @@ async function main() {
     if (cmd === 'segment') return;
   }
 
-  if (cmd === 'build' || cmd === 'make' || cmd === 'make-korean') {
+  if (cmd === 'segment-sheet' || cmd === 'make-sheet') {
+    const fsx = require('fs');
+    const { captureCells } = require('./cells');
+    if (!positionals.length) fail(`${cmd} needs at least one page photo.`);
+    if (!opt.chars) fail(`${cmd} requires --chars, in the same order as the printed sheet.`);
+    const chars = [...opt.chars.normalize('NFC').replace(/[\s/\n\r]/g, '')];
+    const items = chars.map((char) => ({ label: char, name: char }));
+    const captured = await captureCells(positionals, dir, items, {
+      delta: opt.delta === undefined ? undefined : Number(opt.delta),
+      cap: opt.cap === undefined ? undefined : Number(opt.cap),
+      pageLabel: 'sheet-page',
+    });
+    const manifest = { pad: captured.pad, photos: captured.photos, blobs: captured.blobs, clipped: captured.clipped };
+    fsx.writeFileSync(path.join(dir, 'blobs.json'), JSON.stringify(manifest, null, 2));
+    fsx.writeFileSync(path.join(dir, 'labels.json'), JSON.stringify(captured.labels, null, 2));
+    console.log(`Captured ${captured.blobs.length} cells. Crops: ${dir}/crops/  Labels: ${dir}/labels.json`);
+    if (cmd === 'segment-sheet') return;
+    opt.labels = path.join(dir, 'labels.json');
+  }
+
+  if (cmd === 'build' || cmd === 'make' || cmd === 'make-korean' || cmd === 'make-sheet') {
     await build(dir, opt);
     return;
   }

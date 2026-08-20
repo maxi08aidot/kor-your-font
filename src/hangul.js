@@ -214,77 +214,16 @@ function generateKoreanTemplate(out, { labelFont } = {}) {
   });
 }
 
-function templateCellBox(width, height, index) {
-  const sx = width / A4.w, sy = height / A4.h;
-  const gridW = A4.w - 2 * TEMPLATE.margin;
-  const gridH = A4.h - TEMPLATE.margin - (TEMPLATE.margin + TEMPLATE.header);
-  const cw = gridW / TEMPLATE.cols, ch = gridH / TEMPLATE.rows;
-  const x = Math.round((TEMPLATE.margin + (index % TEMPLATE.cols) * cw) * sx);
-  const y = Math.round((TEMPLATE.margin + TEMPLATE.header + Math.floor(index / TEMPLATE.cols) * ch) * sy);
-  const x1 = Math.round((TEMPLATE.margin + (index % TEMPLATE.cols) * cw + cw - 4) * sx);
-  const y1 = Math.round((TEMPLATE.margin + TEMPLATE.header + Math.floor(index / TEMPLATE.cols) * ch + ch - 4) * sy);
-  return { x, y, x1, y1 };
-}
 
 async function segmentKoreanTemplate(photos, dir, { delta, cap } = {}) {
   const fs = require('fs');
   const path = require('path');
-  const sharp = require('sharp');
-  const { binarize } = require('./capture');
+  const { captureCells } = require('./cells');
   const parts = requiredComponents();
-  const perPage = TEMPLATE.cols * TEMPLATE.rows;
-  if (photos.length < Math.ceil(parts.length / perPage)) {
-    throw new Error(`Korean template needs ${Math.ceil(parts.length / perPage)} page photos; received ${photos.length}.`);
-  }
-  fs.mkdirSync(path.join(dir, 'crops'), { recursive: true });
-  const blobs = [], labels = {}, clipped = [];
-  let id = 0;
-  for (let page = 0; page * perPage < parts.length; page++) {
-    const { ink, width, height, gray } = await binarize(photos[page], { delta, cap });
-    for (let i = 0; i < perPage && page * perPage + i < parts.length; i++) {
-      const box = templateCellBox(width, height, i);
-      let x0 = box.x1, y0 = box.y1, x1 = box.x, y1 = box.y;
-      for (let y = box.y; y < box.y1; y++) for (let x = box.x; x < box.x1; x++) {
-        if (!ink[y * width + x]) continue;
-        x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y);
-      }
-      const part = parts[page * perPage + i];
-      if (x1 < x0 || y1 < y0) throw new Error(`No ink found in template cell ${part.key}. Re-shoot page ${page + 1}.`);
-      // Only this cell is searched, so a stroke that left the cell is not
-      // merely mis-cropped - it does not exist as far as the rest of the build
-      // is concerned. The component is then silently wrong, and so is every
-      // syllable using it: one clipped lead consonant corrupts 588 syllables.
-      // Ink reaching the boundary is the signal that it kept going.
-      const EDGE = 2;
-      const sides = [];
-      if (y0 <= box.y + EDGE) sides.push('top');
-      if (y1 >= box.y1 - 1 - EDGE) sides.push('bottom');
-      if (x0 <= box.x + EDGE) sides.push('left');
-      if (x1 >= box.x1 - 1 - EDGE) sides.push('right');
-      if (sides.length) clipped.push({ key: part.key, page: page + 1, sides });
-
-      const w = x1 - x0 + 1, h = y1 - y0 + 1;
-      const cw = w + 2 * TEMPLATE.pad, ch = h + 2 * TEMPLATE.pad;
-      const pixels = Buffer.alloc(cw * ch, 255);
-      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-        if (ink[(y0 + y) * width + x0 + x]) pixels[(y + TEMPLATE.pad) * cw + x + TEMPLATE.pad] = 0;
-      }
-      const crop = path.join('crops', `${id}.png`);
-      await sharp(pixels, { raw: { width: cw, height: ch, channels: 1 } }).png().toFile(path.join(dir, crop));
-      blobs.push({ id, photo: photos[page], row: Math.floor(i / TEMPLATE.cols), box: { x0, y0, x1, y1 }, crop, cropSize: { width: cw, height: ch } });
-      labels[id] = part.key;
-      id++;
-    }
-    // Keep a lightly processed copy to make page-order mistakes diagnosable.
-    await sharp(gray, { raw: { width, height, channels: 1 } }).png().toFile(path.join(dir, `korean-page-${page + 1}.png`));
-  }
-  if (clipped.length) {
-    console.warn(`  ! ${clipped.length} component(s) run past the edge of their cell and were cut off:`);
-    for (const c of clipped) console.warn(`      ${c.key} (page ${c.page}, ${c.sides.join(' and ')})`);
-    console.warn('    Every syllable built from these will be wrong. Re-write them smaller,');
-    console.warn('    inside their boxes, re-shoot that page, and rebuild.');
-  }
-  const manifest = { pad: TEMPLATE.pad, photos: photos.slice(0, Math.ceil(parts.length / perPage)), blobs, clipped };
+  const items = parts.map((part) => ({ label: part.key, name: part.key }));
+  const { pad, photos: used, blobs, labels, clipped } =
+    await captureCells(photos, dir, items, { delta, cap, pageLabel: 'korean-page' });
+  const manifest = { pad, photos: used, blobs, clipped };
   fs.writeFileSync(path.join(dir, 'blobs.json'), JSON.stringify(manifest, null, 2));
   fs.writeFileSync(path.join(dir, 'korean-labels.json'), JSON.stringify(labels, null, 2));
   return manifest;

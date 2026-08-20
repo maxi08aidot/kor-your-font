@@ -21,43 +21,50 @@ async function audit(dir, chars, { pinned = new Set() } = {}) {
   // the gate, and no box edit could ever move the number, because the ink it
   // was counting as missing was never missing.
   const freeform = manifest.mode === 'korean-freeform';
-  const { ink, width, height } = freeform
-    ? await binarizeFreeform(manifest.photos[0], {})
-    : await binarize(manifest.photos[0], {});
-  const parts = labelComponents(ink, width, height);
-  const boxes = manifest.blobs.map((b) => b.box);
-  const owner = assignComponents(ink, width, boxes, parts);
-
-  // Foreign ink is judged on what actually reached the crop, not on what the
-  // box happened to overlap: in cursive the boxes must overlap, and removing
-  // the intruders afterwards is exactly the crop filter's job.
   const sharp = require('sharp');
   const { PAD } = require('./segment');
-  const insideOwned = new Int32Array(boxes.length);
-  const foreign = new Int32Array(boxes.length);
-  for (let i = 0; i < boxes.length; i++) {
-    const box = boxes[i];
-    const cropFile = path.join(dir, manifest.blobs[i].crop);
-    const { data, info } = await sharp(cropFile).grayscale().raw().toBuffer({ resolveWithObject: true });
-    for (let y = box.y0; y <= box.y1; y++) {
-      const row = y * width;
-      for (let x = box.x0; x <= box.x1; x++) {
-        if (!ink[row + x]) continue;
-        const px = (y - box.y0 + PAD) * info.width + (x - box.x0 + PAD);
-        if (data[px] >= 128) continue; // the filter already dropped it
-        if (owner.get(parts.labels[row + x]) === i) insideOwned[i]++;
-        else foreign[i]++;
+
+  const insideOwned = new Int32Array(manifest.blobs.length);
+  const foreign = new Int32Array(manifest.blobs.length);
+  const ownedTotal = new Int32Array(manifest.blobs.length);
+  let orphan = 0, total = 0;
+  const pages = [];
+
+  // A worksheet is several photographs, and a blob only exists in its own.
+  // Measuring page two against page one's ink reported characters as entirely
+  // foreign - the ink they were compared with was a different sheet.
+  for (const photo of manifest.photos) {
+    const { ink, width, height } = freeform
+      ? await binarizeFreeform(photo, {})
+      : await binarize(photo, {});
+    const parts = labelComponents(ink, width, height);
+    const here = manifest.blobs
+      .map((b, i) => ({ b, i }))
+      .filter(({ b }) => (b.photo || manifest.photos[0]) === photo);
+    const owner = assignComponents(ink, width, here.map(({ b }) => b.box), parts);
+
+    for (let k = 0; k < here.length; k++) {
+      const { b, i } = here[k];
+      const box = b.box;
+      const { data, info } = await sharp(path.join(dir, b.crop)).grayscale().raw().toBuffer({ resolveWithObject: true });
+      for (let y = box.y0; y <= box.y1; y++) {
+        const row = y * width;
+        for (let x = box.x0; x <= box.x1; x++) {
+          if (!ink[row + x]) continue;
+          const px = (y - box.y0 + PAD) * info.width + (x - box.x0 + PAD);
+          if (data[px] >= 128) continue; // the crop filter already dropped it
+          if (owner.get(parts.labels[row + x]) === k) insideOwned[i]++;
+          else foreign[i]++;
+        }
       }
     }
-  }
-
-  const ownedTotal = new Int32Array(boxes.length);
-  let orphan = 0, total = 0;
-  for (let id = 1; id < parts.areas.length; id++) {
-    total += parts.areas[id];
-    const who = owner.get(id);
-    if (who === undefined || who < 0) { orphan += parts.areas[id]; continue; }
-    ownedTotal[who] += parts.areas[id];
+    for (let id = 1; id < parts.areas.length; id++) {
+      total += parts.areas[id];
+      const who = owner.get(id);
+      if (who === undefined || who < 0) { orphan += parts.areas[id]; continue; }
+      ownedTotal[here[who].i] += parts.areas[id];
+    }
+    pages.push({ parts, owner, width, height, index: here.map(({ i }) => i) });
   }
 
   // Duplicate syllables never reach the font - only the first occurrence does.
@@ -67,7 +74,7 @@ async function audit(dir, chars, { pinned = new Set() } = {}) {
     firstUse.add(c);
     return true;
   });
-  const rows = boxes.map((box, i) => ({
+  const rows = manifest.blobs.map(({ box }, i) => ({
     used: used[i] === true,
     // A box the operator supplied by hand is their decision, not a defect:
     // deliberately cutting a neighbour's stroke away shows up as "clipped".
@@ -90,28 +97,33 @@ async function audit(dir, chars, { pinned = new Set() } = {}) {
     const built = new Set(Object.keys(JSON.parse(fs.readFileSync(manifestFile, 'utf8')).glyphs || {}));
     absent = rows.filter((r) => r.used && r.char && !built.has(r.char)).map((r) => r.char);
   }
-  return { rows: rows.filter((r) => r.used), all: rows, absent, orphan, total, parts, owner, width, height, ink };
+  return { rows: rows.filter((r) => r.used), all: rows, absent, orphan, total, pages };
 }
 
 // A glyph missing part of itself is fixed by growing its box to hold every
 // component it owns - nothing else moves, because ownership is decided from
 // the boxes of the previous round.
 function proposeBoxes(result) {
-  const { rows, parts, owner, width, height } = result;
+  const { rows, pages } = result;
+  // Extents are per page: a blob's coordinates only mean anything in the photo
+  // it came from.
   const extents = new Map();
-  for (let y = 0; y < height; y++) {
-    const row = y * width;
-    for (let x = 0; x < width; x++) {
-      const id = parts.labels[row + x];
-      if (!id) continue;
-      const who = owner.get(id);
-      if (who === undefined || who < 0) continue;
-      const e = extents.get(who) || { x0: x, y0: y, x1: x, y1: y };
-      if (x < e.x0) e.x0 = x;
-      if (x > e.x1) e.x1 = x;
-      if (y < e.y0) e.y0 = y;
-      if (y > e.y1) e.y1 = y;
-      extents.set(who, e);
+  for (const { parts, owner, width, height, index } of pages) {
+    for (let y = 0; y < height; y++) {
+      const row = y * width;
+      for (let x = 0; x < width; x++) {
+        const id = parts.labels[row + x];
+        if (!id) continue;
+        const local = owner.get(id);
+        if (local === undefined || local < 0) continue;
+        const who = index[local];
+        const e = extents.get(who) || { x0: x, y0: y, x1: x, y1: y };
+        if (x < e.x0) e.x0 = x;
+        if (x > e.x1) e.x1 = x;
+        if (y < e.y0) e.y0 = y;
+        if (y > e.y1) e.y1 = y;
+        extents.set(who, e);
+      }
     }
   }
   // Grow the box until it holds everything the glyph owns - never shrink it.

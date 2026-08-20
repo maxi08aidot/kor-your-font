@@ -141,6 +141,26 @@ without pushing:
   work2` - then relabel from the new contact sheets (blob ids renumber; the
   old labels.json does not carry over) and build from the new workdir.
 
+## Printed sheet for any character set
+
+When you know exactly which characters are needed - the strings on a website,
+a logotype, a set of labels - print a sheet for precisely those. One character
+per cell means nothing has to be recognised and nothing can be mis-ordered,
+which is what goes wrong with a dense freeform photo.
+
+```bash
+$DYF template --chars "가나다ABC123" -o sheet.pdf
+# print, write one character per cell, photograph each page, then:
+$DYF make-sheet page-1.jpg page-2.jpg --chars "가나다ABC123" --name "My Hand"
+```
+
+42 cells per page. Hangul cells are labelled with the actual character, using a
+system Korean font; if none is found, pass `--label-font <font.ttf>`. Ask the
+writer to keep every stroke inside its box - the capture searches one cell at a
+time, so a stroke that leaves its cell is simply gone, and the build says so.
+
+`review` and `audit` both work on the result.
+
 ## Korean worksheet flow
 
 Modern Hangul is produced from 67 handwritten components: 19 leading

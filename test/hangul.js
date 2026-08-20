@@ -351,9 +351,60 @@ async function latinAuditE2E() {
   assert.ok(refused, 'refine must refuse a workdir it did not build');
 }
 
+
+// A printed sheet for an arbitrary character set: the cells say where every
+// character is, so nothing has to be recognised and nothing can be mis-ordered.
+// Two pages, because audit measured every blob against the first photo only -
+// page-two characters came back as entirely foreign ink, compared against a
+// sheet they were never on.
+async function charSheetE2E() {
+  const root = path.join(__dirname, '..');
+  const { SHEET, A4, PER_PAGE } = require('../src/cells');
+  const dir = path.join(os.tmpdir(), 'kor-your-font-charsheet');
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(dir, { recursive: true });
+
+  const CHARS = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwx'];
+  assert.ok(CHARS.length > PER_PAGE, 'this test needs to span two pages');
+  const S = 3, W = Math.round(A4.w * S), H = Math.round(A4.h * S);
+  const cw = (A4.w - 2 * SHEET.margin) / SHEET.cols;
+  const ch = (A4.h - SHEET.margin - (SHEET.margin + SHEET.header)) / SHEET.rows;
+  const photos = [];
+  for (let page = 0; page * PER_PAGE < CHARS.length; page++) {
+    let g = '';
+    for (let i = 0; i < PER_PAGE && page * PER_PAGE + i < CHARS.length; i++) {
+      const x = (SHEET.margin + (i % SHEET.cols) * cw) * S;
+      const y = (SHEET.margin + SHEET.header + Math.floor(i / SHEET.cols) * ch) * S;
+      const w = cw * S, h = ch * S;
+      g += `<rect x="${x}" y="${y}" width="${w - 12}" height="${h - 12}" fill="none" stroke="#c8c8c8" stroke-width="2"/>`;
+      // a two-stroke mark, drawn well inside its cell
+      const cx = x + w / 2, cy = y + h / 2;
+      g += `<path d="M${cx - 22} ${cy - 26}L${cx + 14} ${cy + 24} M${cx + 20} ${cy - 24}L${cx - 8} ${cy + 28}" fill="none" stroke="#151515" stroke-width="7" stroke-linecap="round"/>`;
+    }
+    const photo = path.join(dir, `page-${page + 1}.jpg`);
+    await sharp(Buffer.from(`<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="#faf7f0"/>${g}</svg>`))
+      .jpeg({ quality: 88 }).toFile(photo);
+    photos.push(photo);
+  }
+
+  const work = path.join(dir, 'work');
+  const cli = (...args) => execFileSync(process.execPath, [path.join(root, 'src/cli.js'), ...args], { encoding: 'utf8' });
+  const built = cli('make-sheet', ...photos, '--chars', CHARS.join(''), '-d', work, '--name', 'Sheet Hand');
+  assert.match(built, new RegExp(`Captured ${CHARS.length} cells`));
+  assert.doesNotMatch(built, /run past their edge/, 'nothing here touches a cell edge');
+
+  const font = opentype.loadSync(path.join(work, 'SheetHand.ttf'));
+  for (const c of CHARS) assert.notEqual(font.charToGlyph(c).index, 0, `${c} must be in the font`);
+
+  const report = cli('audit', '-d', work, '--chars', CHARS.join(''));
+  assert.match(report, /clipped 0/, `a clean sheet must audit clean:\n${report}`);
+  assert.doesNotMatch(report, /foreign\s+100\.0%/,
+    `page two must be measured against page two:\n${report}`);
+}
+
 composeGeometry();
 
-Promise.all([koreanTemplateE2E(), koreanFreeformE2E(), koreanMultiLineE2E(), foreignInkE2E(), koreanToolingE2E(), shadedPageE2E(), latinAuditE2E()]).then(() => console.log('hangul e2e OK - worksheet, freeform, multi-line, foreign-ink and audit/review/refine flows work.')).catch((err) => {
+Promise.all([koreanTemplateE2E(), koreanFreeformE2E(), koreanMultiLineE2E(), foreignInkE2E(), koreanToolingE2E(), shadedPageE2E(), latinAuditE2E(), charSheetE2E()]).then(() => console.log('hangul e2e OK - worksheet, freeform, multi-line, foreign-ink and audit/review/refine flows work.')).catch((err) => {
   console.error(err);
   process.exit(1);
 });
