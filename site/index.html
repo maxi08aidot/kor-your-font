@@ -7,26 +7,18 @@
 <meta name="description" content="종이에 손글씨를 쓰고 사진 한 장만 찍으면 진짜 폰트가 됩니다. 현대 한글 11,172자 완성형 지원. 무료, 오픈소스, 내 컴퓨터에서 실행. TTF, WOFF, WOFF2.">
 <meta property="og:title" content="kor-your-font">
 <meta property="og:description" content="손글씨 사진 한 장을 진짜 폰트로. 한글 11,172자 완성형 지원, 무료·오픈소스, 업로드 없음.">
-<meta property="og:image" content="https://jogwangjae.github.io/kor-your-font/hero.png">
 <meta property="og:url" content="https://jogwangjae.github.io/kor-your-font/">
 <meta property="og:type" content="website">
-<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="kor-your-font">
 <meta name="twitter:description" content="손글씨 사진 한 장을 진짜 폰트로. 한글 11,172자 완성형 지원, 무료·오픈소스, 업로드 없음.">
-<meta name="twitter:image" content="https://jogwangjae.github.io/kor-your-font/hero.png">
-<meta name="twitter:image:alt" content="스프링 공책에 쓴 손글씨가 설치 가능한 폰트로 바뀌는 모습">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
-<link rel="preload" href="DansHand.woff2" as="font" type="font/woff2" crossorigin>
 <style>
-  /* The headline face is the product: a real font made from one photo of
-     handwriting by this exact tool. Body stays system-ui (it ships optical
-     sizing and tracking tables; overriding it needs a reason, and we have
-     one only for display text). */
-  @font-face {
-    font-family: 'Dans Hand';
-    src: url('DansHand.woff2') format('woff2');
-    font-display: swap;
-  }
+  /* Display text should be set in a font this tool made from handwriting -
+     that is the product demonstrating itself. There is no such font here
+     yet: the one we inherited was the upstream author's own handwriting and
+     was not ours to publish. Until a replacement is written for this page,
+     display text falls back with the body text. */
 
   :root {
     --paper: #faf7f1;
@@ -49,10 +41,10 @@
   }
 
   .hand {
-    font-family: 'Dans Hand', cursive;
+    font-family: inherit;
     text-transform: uppercase;
     font-weight: normal;
-    letter-spacing: 0.02em; /* handwriting caps breathe a little */
+    letter-spacing: 0.02em;
   }
 
   .wrap { max-width: 880px; margin: 0 auto; padding: 0 24px; }
@@ -109,7 +101,7 @@
   .install code .dim { color: #8d887e; }
   .copy {
     all: unset; cursor: pointer;
-    font-family: 'Dans Hand', cursive; text-transform: uppercase;
+    font-family: inherit; text-transform: uppercase;
     font-size: 1rem; color: var(--paper);
     background: var(--accent);
     border-radius: 9px; padding: 8px 16px 6px;
@@ -199,7 +191,7 @@
   }
   #demo-download {
     display: inline-block;
-    font-family: 'Dans Hand', cursive; text-transform: uppercase;
+    font-family: inherit; text-transform: uppercase;
     color: var(--paper); background: var(--accent);
     text-decoration: none;
     border-radius: 9px; padding: 10px 20px 8px;
@@ -278,14 +270,9 @@
         <code id="cmd">npx skills add jogwangjae/kor-your-font</code>
         <button class="copy" id="copyBtn" type="button" aria-label="설치 명령어 복사">복사</button>
       </div>
-      <p class="caption reveal d3">위 제목은 아래 사진 한 장으로 이 도구가 만든 폰트입니다.</p>
+      <p class="caption reveal d3">사진 한 장이면 됩니다. 아래에서 바로 해보세요.</p>
     </div>
 
-    <div class="hero-img reveal d4">
-      <img src="hero.png" width="1200" height="675"
-           alt="스프링 공책에 쓴 손글씨와, 그것으로 만들어져 Font Book에 설치되는 폰트">
-      <p class="caption">보정 없는 실제 결과물입니다. 어두운 조명, 스프링 제본, 페이지 그림자 그대로. 사진 한 장 넣으면 설치 가능한 폰트가 나옵니다.</p>
-    </div>
 
     <section id="demo">
       <h2 class="hand">여기서 바로 해보기</h2>
@@ -362,12 +349,6 @@
           <p><b>Claude Code</b>에 사진을 끌어다 놓고 스킬을 불러주세요. 글자를 찾아
              라벨을 붙이고, 초·중·종성을 조합해 폰트를 만들고, 결과까지 확인해 줍니다.</p>
         </div>
-      </div>
-      <div class="how-video">
-        <video data-src="draw_your_font.mp4" width="1080" height="1440"
-               muted loop playsinline preload="none"
-               aria-label="화면 녹화: 손글씨 사진이 설치된 폰트로 바뀌는 과정"></video>
-        <p class="caption">실제 속도 그대로의 전체 과정. 사진을 넣고, 폰트를 설치합니다.</p>
       </div>
     </section>
 
