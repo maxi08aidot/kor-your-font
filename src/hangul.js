@@ -536,12 +536,26 @@ function cutLineIntoCells(parts, count, ctx) {
   for (const v of cols) if (v > peak) peak = v;
   const inkCost = (x) => (peak ? (cols[x] / peak) ** 2 : 0);
   const target = width / count;
-  // dp[k][x] = best cost for k cells covering columns [0, x)
+  // Cutting on even widths alone puts a cell in every wide gap: write "zebra
+  // 안녕" and the space between the words is broad enough to be handed a
+  // character of its own, which then traces to nothing while a real letter
+  // shares a cell with its neighbour. Characters are spaced by ink, not by
+  // millimetres, so score the split on both.
+  const inkPrefix = new Float64Array(width + 1);
+  for (let x = 0; x < width; x++) inkPrefix[x + 1] = inkPrefix[x] + cols[x];
+  const inkTarget = inkPrefix[width] / count || 1;
   const NEG = Infinity;
   let prev = new Float64Array(width + 1).fill(NEG);
   let prevCut = [];
   const cutTable = [];
-  const cellCost = (a, b) => { const r = (b - a) / target; return (r - 1) ** 2; };
+  const cellCost = (a, b) => {
+    const wide = (b - a) / target;
+    const inked = (inkPrefix[b] - inkPrefix[a]) / inkTarget;
+    // A cell with almost no ink is not a character; refuse it outright rather
+    // than trading it off against tidy widths.
+    const empty = inked < 0.15 ? 60 : 0;
+    return (wide - 1) ** 2 + 2 * (inked - 1) ** 2 + empty;
+  };
   prev[0] = 0;
   for (let k = 1; k <= count; k++) {
     const cur = new Float64Array(width + 1).fill(NEG);
