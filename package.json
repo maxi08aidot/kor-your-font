@@ -19,7 +19,8 @@
   "scripts": {
     "test": "node test/e2e.js && node test/hangul.js && node tools/check-site-font.js",
     "build:demo": "esbuild site/demo.src.js --bundle --minify --format=iife --outfile=site/demo.js --external:node:fs --external:wawoff2 --log-level=error",
-    "check:site-font": "node tools/check-site-font.js"
+    "check:site-font": "node tools/check-site-font.js",
+    "serve": "node tools/serve.js"
   },
   "keywords": [
     "font",

@@ -127,7 +127,7 @@ function otsuThreshold(hist, total) {
 // deliberately thin mask used for segmentation - full-weight ink lets
 // neighbouring lines touch, which fuses their components and ruins the cut -
 // while `ink` is the full-weight mask that gets cropped and traced.
-function binarizeKorean(imgData) {
+function binarizeKorean(imgData, bias = 0) {
   const { width, height } = imgData;
   const gray = toGray(imgData);
   const hist = new Uint32Array(256);
@@ -147,6 +147,9 @@ function binarizeKorean(imgData) {
     for (let v = 0; v < 256; v++) { seen += hist[v]; if (seen >= target) { quantile = v; break; } }
     threshold = Math.max(55, Math.min(90, quantile));
   }
+  // Otsu decides on its own; the slider only nudges what it decided, so the
+  // control means the same thing on every photo instead of a raw grey level.
+  if (bias) threshold = Math.max(40, Math.min(220, threshold + bias));
   let ink = new Uint8Array(gray.length);
   for (let i = 0; i < ink.length; i++) if (gray[i] < threshold) ink[i] = 1;
   // Seal the pinholes that threshold flicker leaves inside a dry brush stroke;
@@ -163,6 +166,13 @@ function binarizeKorean(imgData) {
 }
 
 function isHangul(char) { return /^[가-힣]$/.test(char); }
+
+// The user already tells us what they wrote, so asking again for the script is
+// asking a question we can answer ourselves - and one they can answer wrongly.
+// Syllables and compatibility jamo both mean the Korean path.
+function detectMode(chars) {
+  return /[\uAC00-\uD7A3\u3131-\u318E]/.test(chars) ? 'korean' : 'latin';
+}
 
 // Conservative "chunks": components whose horizontal projections overlap are
 // certainly part of the same written unit. This never bridges a real word gap.
@@ -472,14 +482,19 @@ function groupKoreanParts(parts, chars, ctx) {
 
 // ---------- segmentation (shared blob-core) ----------
 
-function segmentImage(imgData, delta, mode, chars) {
+function segmentImage(imgData, bias, mode, chars, override) {
   const { width, height } = imgData;
   const korean = mode === 'korean';
   // Korean segments on the thin mask so neighbouring lines cannot touch, then
   // crops and traces from the full-weight one.
-  const masks = korean ? binarizeKorean(imgData) : null;
-  const ink = korean ? masks.ink : binarize(imgData, { delta });
+  const masks = korean ? binarizeKorean(imgData, bias) : null;
+  // `delta` is a margin below the local paper tone, so it runs the other way:
+  // a bigger margin admits less ink. Negate the bias to keep + = darker.
+  const ink = korean ? masks.ink : binarize(imgData, { delta: Math.max(15, Math.min(70, 40 - bias)) });
   const segMask = korean ? masks.lean : ink;
+  // Hand-drawn boxes replace the whole finding step, but still trace from the
+  // freshly thresholded ink so the sensitivity slider keeps working under them.
+  if (override) return { ink, blobs: orderBlobs(override.map((b) => clampBox(b, width, height))), width };
   const minArea = Math.max(30, Math.round(width * height * 3e-6));
   let boxes = connectedComponents(segMask, width, height, minArea);
   boxes = boxes.filter((b) => b.x1 - b.x0 + 1 >= 4 && b.y1 - b.y0 + 1 >= 4);
@@ -525,12 +540,24 @@ async function traceCrop(img) {
   return svgpathLib(m[1]).scale(0.1, -0.1).translate(0, img.height).round(1).toString();
 }
 
-async function buildFont(imgData, chars, name, delta, mode, onProgress) {
-  const { ink, blobs, width } = segmentImage(imgData, delta, mode, chars);
-  // In Korean mode "/" and newlines are line separators, not characters.
-  const wanted = (mode === 'korean'
+// "/" and newlines are line separators in Korean mode, not characters.
+function wantedChars(chars, mode) {
+  return (mode === 'korean'
     ? parseExpectedLines(chars).flat()
     : [...chars.normalize('NFC').replace(/\s+/g, '')]).filter((c) => [...c].length === 1);
+}
+
+function clampBox(b, width, height) {
+  const x0 = Math.max(0, Math.min(width - 1, Math.round(Math.min(b.x0, b.x1))));
+  const x1 = Math.max(0, Math.min(width - 1, Math.round(Math.max(b.x0, b.x1))));
+  const y0 = Math.max(0, Math.min(height - 1, Math.round(Math.min(b.y0, b.y1))));
+  const y1 = Math.max(0, Math.min(height - 1, Math.round(Math.max(b.y0, b.y1))));
+  return { x0, y0, x1, y1 };
+}
+
+async function buildFont(imgData, chars, name, bias, mode, onProgress, override) {
+  const { ink, blobs, width } = segmentImage(imgData, bias, mode, chars, override);
+  const wanted = wantedChars(chars, mode);
   const n = Math.min(blobs.length, wanted.length);
   const glyphs = [];
   const seen = new Set();
@@ -545,7 +572,8 @@ async function buildFont(imgData, chars, name, delta, mode, onProgress) {
     glyphs.push({ char, ...placeGlyph(d, { width: crop.width, height: crop.height }, PAD, char) });
   }
   if (!glyphs.length) throw new Error('no glyphs traced');
-  return { ttf: buildTTF(name, glyphs), glyphCount: glyphs.length, blobCount: blobs.length, wantedCount: wanted.length };
+  return { ttf: buildTTF(name, glyphs), glyphCount: glyphs.length, blobCount: blobs.length,
+    wantedCount: wanted.length, blobs };
 }
 
 // ---------- UI ----------
@@ -574,11 +602,16 @@ async function run() {
     status.textContent = '사진을 읽는 중…';
     await initPotrace();
     const name = ($('demo-name').value.trim() || 'My Hand').slice(0, 40);
-    const delta = Number($('demo-delta').value);
-    const mode = $('demo-mode').value;
-    const { ttf, glyphCount, blobCount, wantedCount } = await buildFont(
-      lastImage, $('demo-chars').value, name, delta, mode, (t) => { status.textContent = t; }
+    const bias = Number($('demo-delta').value);
+    const mode = effectiveMode();
+    const { ttf, glyphCount, blobCount, wantedCount, blobs } = await buildFont(
+      lastImage, $('demo-chars').value, name, bias, mode, (t) => { status.textContent = t; },
+      editBoxes
     );
+    // Only an automatic pass may redefine what "automatic" means; a run driven
+    // by hand-drawn boxes must not overwrite the state the reset button restores.
+    if (!editBoxes) autoBoxes = blobs.map((b) => ({ x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1, id: ++boxSeq }));
+    drawEditor();
 
     const face = new FontFace(`demo-font-${++fontSeq}`, ttf.buffer ? ttf.buffer : ttf);
     await face.load();
@@ -593,7 +626,7 @@ async function run() {
     result.hidden = false;
     let note = `${blobCount}개 필체 덩어리에서 ${glyphCount}개 글자를 추출했습니다.`;
     if (blobCount !== wantedCount) {
-      note += ` 입력한 글자는 ${wantedCount}개입니다. 글자 연결이 어색하면 잉크 감도를 조절하거나 쓴 순서를 확인하세요.`;
+      note += ` 입력한 글자는 ${wantedCount}개입니다. 글자 연결이 어색하면 쓴 순서를 확인하거나 고급 설정에서 잉크 감도를 조절하세요.`;
     }
     status.textContent = note;
   } catch (e) {
@@ -603,6 +636,235 @@ async function run() {
   } finally {
     busy = false;
   }
+}
+
+const PREVIEWS = { korean: '오늘의 기록', latin: 'The quick brown fox' };
+
+const MODE_HELP = {
+  korean: '한글 완성 음절과 영문을 왼쪽에서 오른쪽으로 쓰세요. 여러 줄로 썼다면 "/" 또는 줄바꿈으로 줄을 구분해 입력하세요(예: 오늘의기록/Hello). 적은 글자만 담은 부분 폰트를 만듭니다.',
+  latin: '글자가 서로 닿지 않게 쓴 뒤, 쓴 순서대로 입력하세요.',
+};
+
+function effectiveMode() {
+  const picked = $('demo-mode').value;
+  return picked === 'auto' ? detectMode($('demo-chars').value) : picked;
+}
+
+function syncHints() {
+  const mode = effectiveMode();
+  $('demo-mode-help').textContent = MODE_HELP[mode];
+  const bias = Number($('demo-delta').value);
+  $('demo-delta-value').textContent = bias === 0 ? '자동' : (bias > 0 ? `자동 +${bias}` : `자동 ${bias}`);
+  // Only reseed a preview the reader has not written in themselves.
+  const preview = $('demo-preview');
+  if (Object.values(PREVIEWS).includes(preview.textContent.trim())) {
+    preview.textContent = PREVIEWS[mode];
+  }
+}
+
+// ---------- box editor ----------
+// Segmentation gets the syllable *count* right far more often than it gets the
+// *cut* right: on overlapping brush writing a stray fragment becomes its own
+// "syllable" while a real stroke is swallowed by its neighbour, and the totals
+// still match. No threshold fixes that, because the ink is not what is wrong.
+// So the reader gets to push a box onto the strokes they meant. Boxes live in
+// image coordinates and are re-sorted into reading order on every edit, which
+// is what makes a moved box carry its character with it.
+
+const HANDLE = 10;          // grab radius for corner handles, in css pixels
+let autoBoxes = null;       // what segmentation last produced
+let editBoxes = null;       // null = follow segmentation
+let photoCanvas = null;     // the photo at full size, drawn once
+let viewScale = 1;          // css pixels per image pixel
+let selected = null;        // a box object from editBoxes, by identity
+let drag = null;
+let boxSeq = 0;
+
+function editorBoxes() { return editBoxes || autoBoxes || []; }
+
+function resetBoxes({ keepPhoto = true } = {}) {
+  editBoxes = null;
+  selected = null;
+  drag = null;
+  if (!keepPhoto) { photoCanvas = null; autoBoxes = null; }
+}
+
+function beginEditing() {
+  if (editBoxes) return;
+  // Copy so the auto result stays intact for "자동으로 되돌리기".
+  editBoxes = (autoBoxes || []).map((b) => ({ x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1, id: ++boxSeq }));
+}
+
+function boxAt(pt) {
+  // Smallest box containing the point, so a box nested in a big one stays reachable.
+  let hit = null;
+  for (const b of editorBoxes()) {
+    if (pt.x < b.x0 || pt.x > b.x1 || pt.y < b.y0 || pt.y > b.y1) continue;
+    const area = (b.x1 - b.x0) * (b.y1 - b.y0);
+    if (!hit || area < hit.area) hit = { box: b, area };
+  }
+  return hit && hit.box;
+}
+
+function handleAt(box, pt) {
+  if (!box) return null;
+  const r = HANDLE / viewScale;
+  for (const [cx, cy, name] of [[box.x0, box.y0, 'nw'], [box.x1, box.y0, 'ne'],
+                                [box.x0, box.y1, 'sw'], [box.x1, box.y1, 'se']]) {
+    if (Math.abs(pt.x - cx) <= r && Math.abs(pt.y - cy) <= r) return name;
+  }
+  return null;
+}
+
+function drawEditor() {
+  const wrap = $('demo-boxes');
+  const canvas = $('demo-canvas');
+  if (!lastImage || !autoBoxes) { wrap.hidden = true; return; }
+  wrap.hidden = false;
+
+  const cssW = Math.max(240, Math.min(wrap.clientWidth || 640, lastImage.width));
+  viewScale = cssW / lastImage.width;
+  const cssH = Math.round(lastImage.height * viewScale);
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  canvas.width = Math.round(cssW * dpr);
+  canvas.height = Math.round(cssH * dpr);
+  canvas.style.width = cssW + 'px';
+  canvas.style.height = cssH + 'px';
+
+  const g = canvas.getContext('2d');
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (!photoCanvas) {
+    photoCanvas = document.createElement('canvas');
+    photoCanvas.width = lastImage.width;
+    photoCanvas.height = lastImage.height;
+    photoCanvas.getContext('2d').putImageData(lastImage, 0, 0);
+  }
+  g.drawImage(photoCanvas, 0, 0, cssW, cssH);
+
+  const ordered = orderBlobs(editorBoxes());
+  const chars = wantedChars($('demo-chars').value, effectiveMode());
+  g.font = '600 13px system-ui, sans-serif';
+  g.textBaseline = 'top';
+  ordered.forEach((b, i) => {
+    const on = selected && b.id === selected.id;
+    const x = b.x0 * viewScale, y = b.y0 * viewScale;
+    const w = (b.x1 - b.x0) * viewScale, h = (b.y1 - b.y0) * viewScale;
+    g.lineWidth = on ? 2.5 : 1.5;
+    g.strokeStyle = on ? '#c0392b' : 'rgba(43, 96, 214, 0.85)';
+    g.strokeRect(x, y, w, h);
+    const ch = chars[i];
+    // A box past the end of the typed text builds nothing - say so on the box.
+    const tag = ch === undefined ? '·' : ch;
+    const tw = g.measureText(tag).width + 8;
+    g.fillStyle = ch === undefined ? 'rgba(160,160,160,0.95)' : (on ? '#c0392b' : 'rgba(43, 96, 214, 0.85)');
+    g.fillRect(x, Math.max(0, y - 17), tw, 17);
+    g.fillStyle = '#fff';
+    g.fillText(tag, x + 4, Math.max(0, y - 17) + 2);
+    if (on) {
+      g.fillStyle = '#c0392b';
+      for (const [cx, cy] of [[b.x0, b.y0], [b.x1, b.y0], [b.x0, b.y1], [b.x1, b.y1]]) {
+        g.fillRect(cx * viewScale - 4, cy * viewScale - 4, 8, 8);
+      }
+    }
+  });
+  $('demo-box-count').textContent = `박스 ${ordered.length}개 · 입력한 글자 ${chars.length}개`;
+}
+
+function wireEditor() {
+  const canvas = $('demo-canvas');
+  const pt = (e) => {
+    const r = canvas.getBoundingClientRect();
+    return { x: (e.clientX - r.left) / viewScale, y: (e.clientY - r.top) / viewScale };
+  };
+
+  canvas.addEventListener('pointerdown', (e) => {
+    if (!autoBoxes) return;
+    beginEditing();
+    const p = pt(e);
+    canvas.setPointerCapture(e.pointerId);
+    const onHandle = handleAt(selected, p);
+    if (onHandle) {
+      drag = { kind: 'resize', box: selected, corner: onHandle };
+    } else {
+      const hit = boxAt(p);
+      if (hit) {
+        selected = hit;
+        drag = { kind: 'move', box: hit, from: p,
+                 start: { x0: hit.x0, y0: hit.y0, x1: hit.x1, y1: hit.y1 } };
+      } else {
+        const box = { x0: p.x, y0: p.y, x1: p.x, y1: p.y, id: ++boxSeq };
+        editBoxes.push(box);
+        selected = box;
+        drag = { kind: 'create', box, corner: 'se' };
+      }
+    }
+    drawEditor();
+  });
+
+  canvas.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const p = pt(e);
+    const b = drag.box;
+    if (drag.kind === 'move') {
+      const dx = p.x - drag.from.x, dy = p.y - drag.from.y;
+      b.x0 = drag.start.x0 + dx; b.x1 = drag.start.x1 + dx;
+      b.y0 = drag.start.y0 + dy; b.y1 = drag.start.y1 + dy;
+    } else {
+      if (drag.corner.includes('n')) b.y0 = p.y; else b.y1 = p.y;
+      if (drag.corner.includes('w')) b.x0 = p.x; else b.x1 = p.x;
+    }
+    drawEditor();
+  });
+
+  const finish = () => {
+    if (!drag) return;
+    const b = drag.box;
+    const norm = clampBox(b, lastImage.width, lastImage.height);
+    Object.assign(b, norm);
+    // A stray click would otherwise leave a 1px box that traces to nothing.
+    if (b.x1 - b.x0 < 4 || b.y1 - b.y0 < 4) {
+      editBoxes = editBoxes.filter((o) => o !== b);
+      if (selected === b) selected = null;
+    }
+    drag = null;
+    drawEditor();
+    run();
+  };
+  canvas.addEventListener('pointerup', finish);
+  canvas.addEventListener('pointercancel', finish);
+
+  canvas.addEventListener('dblclick', (e) => {
+    e.preventDefault();
+    beginEditing();
+    const r = canvas.getBoundingClientRect();
+    const hit = boxAt({ x: (e.clientX - r.left) / viewScale, y: (e.clientY - r.top) / viewScale });
+    if (!hit) return;
+    editBoxes = editBoxes.filter((o) => o !== hit);
+    if (selected === hit) selected = null;
+    drawEditor();
+    run();
+  });
+
+  canvas.setAttribute('tabindex', '0');
+  canvas.addEventListener('keydown', (e) => {
+    if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+    if (!selected) return;
+    e.preventDefault();
+    beginEditing();
+    editBoxes = editBoxes.filter((o) => o !== selected);
+    selected = null;
+    drawEditor();
+    run();
+  });
+
+  $('demo-reset-boxes').addEventListener('click', () => {
+    resetBoxes();
+    drawEditor();
+    run();
+  });
+
+  let rt = null;
+  window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(drawEditor, 150); });
 }
 
 function wire() {
@@ -615,25 +877,24 @@ function wire() {
     e.preventDefault();
     zone.classList.remove('over');
     const f = e.dataTransfer.files[0];
-    if (f) { lastImage = await fileToImageData(f); run(); }
+    if (f) { lastImage = await fileToImageData(f); resetBoxes({ keepPhoto: false }); run(); }
   });
   input.addEventListener('change', async () => {
-    if (input.files[0]) { lastImage = await fileToImageData(input.files[0]); run(); }
+    if (input.files[0]) {
+      lastImage = await fileToImageData(input.files[0]);
+      resetBoxes({ keepPhoto: false });
+      run();
+    }
   });
   let t = null;
   const rerun = () => { clearTimeout(t); t = setTimeout(run, 350); };
-  $('demo-delta').addEventListener('input', rerun);
-  $('demo-chars').addEventListener('input', rerun);
+  $('demo-delta').addEventListener('input', () => { syncHints(); rerun(); });
+  $('demo-chars').addEventListener('input', () => { syncHints(); drawEditor(); rerun(); });
   $('demo-name').addEventListener('input', rerun);
-  $('demo-mode').addEventListener('change', () => {
-    const korean = $('demo-mode').value === 'korean';
-    $('demo-chars').value = korean ? '오늘의기록Hello' : 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    $('demo-preview').textContent = korean ? '오늘의 기록 Hello' : 'The quick brown fox jumps over the lazy dog';
-    $('demo-mode-help').textContent = korean
-      ? '한글 완성 음절과 영문을 왼쪽에서 오른쪽으로 쓰세요. 여러 줄로 썼다면 "/" 또는 줄바꿈으로 줄을 구분해 입력하세요(예: 오늘의기록/Hello). 적은 글자만 담은 부분 폰트를 만듭니다.'
-      : '글자가 닿지 않게 쓴 뒤, 쓴 순서대로 입력하세요.';
-    rerun();
-  });
+  $('demo-mode').addEventListener('change', () => { syncHints(); resetBoxes(); rerun(); });
+  wireEditor();
+  syncHints();
+
   const chooseFlow = (flow) => {
     const self = flow === 'self';
     $('demo-flow-self').setAttribute('aria-selected', String(self));
@@ -667,14 +928,26 @@ async function selftest() {
   });
   try {
     await initPotrace();
-    const { ttf, glyphCount } = await buildFont(
-      ctx.getImageData(0, 0, 900, 340), 'Abgo', 'Self Test', 40, 'latin', () => {}
-    );
-    const u8 = new Uint8Array(ttf.buffer ? ttf.buffer : ttf);
+    const img = ctx.getImageData(0, 0, 900, 340);
+    // Fourth argument is the sensitivity bias, so 0 means "leave it automatic".
+    const auto = await buildFont(img, 'Abgo', 'Self Test', 0, 'latin', () => {});
+    const u8 = new Uint8Array(auto.ttf.buffer ? auto.ttf.buffer : auto.ttf);
     const magicOK = u8[0] === 0 && u8[1] === 1 && u8[2] === 0 && u8[3] === 0;
-    $('demo-status').textContent = magicOK && glyphCount === 4
-      ? 'SELFTEST-PASS 4 glyphs, valid ttf'
-      : `SELFTEST-FAIL glyphs=${glyphCount} magic=${magicOK}`;
+
+    // Hand-corrected boxes must be able to drive a build on their own, and to
+    // change the result: drop the last letter's box and the font must shrink.
+    const trimmed = auto.blobs.slice(0, 3).map((b) => ({ x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1 }));
+    const edited = await buildFont(img, 'Abgo', 'Self Test', 0, 'latin', () => {}, trimmed);
+    const boxesOK = edited.glyphCount === 3 && edited.blobCount === 3;
+
+    // The bias must actually reach the binarizer, not just ride along unused.
+    const dark = await buildFont(img, 'Abgo', 'Self Test', 25, 'latin', () => {});
+    const biasOK = dark.ttf.length !== auto.ttf.length ||
+      !new Uint8Array(dark.ttf).every((v, i) => v === u8[i]);
+
+    $('demo-status').textContent = magicOK && auto.glyphCount === 4 && boxesOK && biasOK
+      ? 'SELFTEST-PASS 4 glyphs, valid ttf, box override + bias live'
+      : `SELFTEST-FAIL glyphs=${auto.glyphCount} magic=${magicOK} boxes=${boxesOK} bias=${biasOK}`;
   } catch (e) {
     $('demo-status').textContent = 'SELFTEST-FAIL ' + e.message;
   }

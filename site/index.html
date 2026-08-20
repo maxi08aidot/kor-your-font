@@ -121,16 +121,6 @@
   .copy:active { transform: scale(0.96); } /* feedback on press, not release */
   .copy:focus-visible { outline: 2px solid var(--paper); outline-offset: 2px; }
 
-  .how-video { padding: 48px 0 0; }
-  .how-video video {
-    display: block;
-    width: min(400px, 100%);
-    height: auto;
-    margin: 0 auto;
-    border-radius: 18px;
-    box-shadow: 0 30px 80px -30px rgba(29, 28, 26, 0.35);
-  }
-
   .hero-img { padding: 56px 0 0; }
   .hero-img img {
     width: 100%; height: auto; display: block;
@@ -209,6 +199,32 @@
   }
   #demo-download:active { transform: scale(0.96); }
   .demo-note { font-size: 0.8rem; color: var(--muted); margin-top: 14px; }
+  .demo-hint { font-size: 0.8rem; color: var(--muted); margin: 10px 0 0; line-height: 1.5; }
+  #demo-boxes { margin-top: 18px; }
+  .demo-box-head {
+    display: flex; align-items: flex-end; justify-content: space-between;
+    gap: 16px; flex-wrap: wrap;
+  }
+  .demo-box-head .demo-hint { flex: 1 1 320px; }
+  .demo-box-actions { display: flex; align-items: center; gap: 10px; font-size: 0.8rem; color: var(--muted); }
+  .demo-ghost {
+    font: 0.8rem system-ui, sans-serif; cursor: pointer;
+    border: 1px solid var(--line); border-radius: 8px;
+    padding: 6px 10px; background: var(--paper); color: var(--ink);
+  }
+  .demo-ghost:hover { border-color: var(--accent); }
+  #demo-canvas {
+    display: block; max-width: 100%; margin-top: 10px;
+    border: 1px solid var(--line); border-radius: 12px;
+    touch-action: none; cursor: crosshair;
+  }
+  #demo-canvas:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #demo-advanced { margin-top: 14px; }
+  #demo-advanced > summary {
+    font-size: 0.8rem; color: var(--muted); cursor: pointer;
+    width: fit-content; padding: 2px 0;
+  }
+  .demo-readout { color: var(--ink); font-variant-numeric: tabular-nums; }
 
   .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
   @media (max-width: 640px) { .steps { grid-template-columns: 1fr; } }
@@ -297,34 +313,52 @@
           <button id="demo-flow-ai" type="button" role="tab" aria-selected="false">AI와 만들기</button>
         </div>
         <div id="demo-self-panel" class="demo-flow-panel" role="tabpanel">
-        <div class="demo-controls" style="grid-template-columns: 1fr 2fr; margin-top: 0;">
-          <label>글꼴 종류
-            <select id="demo-mode">
-              <option value="latin">영문 / 일반</option>
-              <option value="korean">한글 간편 폰트</option>
-            </select>
-          </label>
-          <label id="demo-mode-help">한글은 완성 음절과 영문을 왼쪽에서 오른쪽으로 쓰세요. 적은 글자만 담은 부분 폰트를 만듭니다.</label>
-        </div>
         <div id="demo-drop" role="button" tabindex="0" aria-label="손글씨 사진 고르기">
           <span class="hand">필체 사진을 올리세요</span>
           또는 눌러서 고르세요. 진한 펜으로 글자가 닿지 않게 써주세요.
           <input type="file" id="demo-file" accept="image/*" hidden>
         </div>
-        <div class="demo-controls">
+        <div class="demo-controls" style="grid-template-columns: 2fr 1fr;">
           <label>쓴 글자 순서
-            <input type="text" id="demo-chars" value="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789" spellcheck="false">
+            <input type="text" id="demo-chars" value="오늘의기록" spellcheck="false">
           </label>
           <label>폰트 이름
             <input type="text" id="demo-name" value="My Hand" maxlength="40">
           </label>
-          <label>잉크 감도
-            <input type="range" id="demo-delta" min="20" max="80" value="40">
-          </label>
+        </div>
+        <p id="demo-mode-help" class="demo-hint">한글 완성 음절과 영문을 왼쪽에서 오른쪽으로 쓰세요. 여러 줄로 썼다면 "/" 또는 줄바꿈으로 줄을 구분해 입력하세요(예: 오늘의기록/Hello). 적은 글자만 담은 부분 폰트를 만듭니다.</p>
+        <details id="demo-advanced">
+          <summary>고급 설정</summary>
+          <div class="demo-controls" style="grid-template-columns: 1fr 1fr; margin-top: 12px;">
+            <label>글씨 종류
+              <select id="demo-mode">
+                <option value="auto">자동 판별</option>
+                <option value="korean">한글</option>
+                <option value="latin">영문 · 숫자</option>
+              </select>
+            </label>
+            <label>잉크 감도 <span id="demo-delta-value" class="demo-readout">자동</span>
+              <input type="range" id="demo-delta" min="-30" max="30" step="5" value="0"
+                     aria-describedby="demo-delta-value">
+            </label>
+          </div>
+          <p class="demo-hint">감도는 자동으로 정합니다. 흐린 연필처럼 획이 끊겨 보이면 올리고,
+          그림자나 종이 무늬까지 잡히면 내리세요.</p>
+        </details>
+        <div id="demo-boxes" hidden>
+          <div class="demo-box-head">
+            <p class="demo-hint">글자가 잘못 잘렸으면 박스를 끌어 고치세요. 박스를 끌면 이동, 모서리를 끌면 크기 조절,
+            빈 곳을 끌면 새 박스, 두 번 누르면 삭제입니다. 고칠 때마다 폰트가 다시 만들어집니다.</p>
+            <div class="demo-box-actions">
+              <span id="demo-box-count"></span>
+              <button type="button" id="demo-reset-boxes" class="demo-ghost">자동으로 되돌리기</button>
+            </div>
+          </div>
+          <canvas id="demo-canvas" aria-label="잘린 글자 박스 편집"></canvas>
         </div>
         <p id="demo-status"></p>
         <div id="demo-result" hidden>
-          <div id="demo-preview" contenteditable="true" spellcheck="false">가나다라마바사</div>
+          <div id="demo-preview" contenteditable="true" spellcheck="false">오늘의 기록</div>
           <a id="demo-download" href="#">TTF 다운로드</a>
         </div>
         <p class="demo-note">모든 처리는 이 브라우저에서 이뤄집니다. 사진은 업로드되지 않습니다.
@@ -433,23 +467,6 @@ npx kor-your-font make photo.jpg --chars "ABCabc" --name "My Hand"</pre>
       }, { rootMargin: '600px' });
       io.observe(document.getElementById('demo'));
     } else load();
-  })();
-
-  // flow video: fetch nothing until it nears the viewport, then autoplay
-  // (controls instead of autoplay under reduced motion)
-  (function () {
-    const v = document.querySelector('.how-video video');
-    const start = () => {
-      v.src = v.dataset.src;
-      if (matchMedia('(prefers-reduced-motion: reduce)').matches) v.controls = true;
-      else { v.muted = true; v.play().catch(() => { v.controls = true; }); }
-    };
-    if ('IntersectionObserver' in window) {
-      const io = new IntersectionObserver((es) => {
-        if (es.some((e) => e.isIntersecting)) { start(); io.disconnect(); }
-      }, { rootMargin: '400px' });
-      io.observe(v);
-    } else start();
   })();
 
   const btn = document.getElementById('copyBtn');
