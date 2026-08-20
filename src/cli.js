@@ -170,7 +170,19 @@ async function main() {
 
   if (cmd === 'preview') {
     const { renderPreview } = require('./preview');
-    const manifest = readJSON(path.join(dir, 'manifest.json'), 'Run build first.');
+    const { isKoreanWorkdir, loadComponents, manifestFor } = require('./components');
+    let manifest;
+    if (isKoreanWorkdir(dir)) {
+      // The worksheet flow stores components, not syllables; compose the ones
+      // this preview actually asks for.
+      const text = opt.text || '다람쥐 헌 쳇바퀴에 타고파';
+      const parts = await loadComponents(dir, { smooth: Number(opt.smooth), weight: Number(opt.weight) });
+      manifest = manifestFor(opt.name, parts, text);
+      if (!Object.keys(manifest.glyphs).length) fail('None of that text is modern Hangul this worksheet can compose.');
+      opt.text = text;
+    } else {
+      manifest = readJSON(path.join(dir, 'manifest.json'), 'Run build first.');
+    }
     const out = opt.out || path.join(dir, 'preview.png');
     await renderPreview(manifest, out, { text: opt.text });
     console.log(`Preview: ${out}`);
@@ -194,8 +206,18 @@ async function main() {
 
   if (cmd === 'review') {
     const { renderReview } = require('./review');
+    const { isKoreanWorkdir, loadComponents } = require('./components');
     const out = opt.out || path.join(dir, 'review.png');
-    const sheets = await renderReview(dir, out);
+    let manifest;
+    if (isKoreanWorkdir(dir)) {
+      // There is no source image of a syllable to compare against - the writer
+      // wrote jamo. Review those instead; a syllable can only be as good as the
+      // components it is built from.
+      const parts = await loadComponents(dir, { smooth: Number(opt.smooth), weight: Number(opt.weight) });
+      manifest = { name: opt.name, unitsPerEm: 1000, glyphs: Object.fromEntries(
+        Object.entries(parts).map(([key, v]) => [key.replace(':', ' '), { d: v.d, advance: 1000, source: v.blob.crop }])) };
+    }
+    const sheets = await renderReview(dir, out, manifest ? { manifest } : {});
     console.log(`Review sheets (source photo above, what the font draws below):\n  ${sheets.join('\n  ')}`);
     console.log('Judge each glyph against the ink directly above it - never against your memory of\nthe character, and never by scanning a grid of small glyphs.');
     return;

@@ -96,13 +96,22 @@ function transform(d, { x, y, sx, sy }) {
   const box = pathBox(d);
   const w = Math.max(1, box.x1 - box.x0), h = Math.max(1, box.y1 - box.y0);
   const slotW = 1000 * sx, slotH = 1000 * sy;
-  const scale = Math.min(slotW / w, slotH / h);
-  const left = x + (slotW - w * scale) / 2;
-  const top = y + (slotH - h * scale) / 2;
-  const bottom = 1000 - top - h * scale;
+  const fit = Math.min(slotW / w, slotH / h);
+  // Hangul type does stretch a jamo to suit its position - a final is drawn
+  // wider and flatter than the same shape used as a lead. So fitting strictly
+  // uniformly leaves finals tiny: a squarish one fills a quarter of the width
+  // of its slot, and 할 reads as 하. Let a component grow into the roomy
+  // direction, but cap how far, well short of the 4x that turned finals into
+  // lines.
+  const MAX_STRETCH = 1.5;
+  const kx = Math.min(slotW / w, fit * MAX_STRETCH);
+  const ky = Math.min(slotH / h, fit * MAX_STRETCH);
+  const left = x + (slotW - w * kx) / 2;
+  const top = y + (slotH - h * ky) / 2;
+  const bottom = 1000 - top - h * ky;
   return svgpath(d)
-    .scale(scale, scale)
-    .translate(left - box.x0 * scale, bottom - box.y0 * scale)
+    .scale(kx, ky)
+    .translate(left - box.x0 * kx, bottom - box.y0 * ky)
     .round(1)
     .toString();
 }

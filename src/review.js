@@ -24,8 +24,8 @@ function glyphSvg(glyph, size) {
   return `<path transform="translate(${x.toFixed(1)},${y.toFixed(1)}) scale(${k.toFixed(4)},${(-k).toFixed(4)})" d="${glyph.d}" fill="#111" fill-rule="evenodd"/>`;
 }
 
-async function renderReview(dir, outFile, { perSheet = 7 } = {}) {
-  const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
+async function renderReview(dir, outFile, { perSheet = 7, manifest } = {}) {
+  if (!manifest) manifest = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
   const blobs = JSON.parse(fs.readFileSync(path.join(dir, 'blobs.json'), 'utf8'));
   const byCrop = new Map(blobs.blobs.map((b) => [b.crop, b]));
   const entries = Object.entries(manifest.glyphs).filter(([, g]) => g && g.d);

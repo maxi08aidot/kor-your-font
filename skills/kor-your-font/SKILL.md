@@ -139,7 +139,18 @@ Tell the user to use a dark pen and photograph the *full* flat worksheet from
 above. `make-korean-full` uses known cell positions, so disconnected strokes in
 one jamo remain one source glyph. It creates role labels automatically; do not
 replace them with ordinary one-character labels. Inspect
-`korean-work/korean-preview.png` before delivery. If a component is faint or
+`korean-work/korean-preview.png` before delivery, and check the components
+themselves - a syllable can only be as good as the jamo it is built from:
+
+```bash
+$DYF review -d korean-work -o korean-work/review.png   # each jamo vs its crop
+$DYF preview -d korean-work --text "값 닭 흙 과 뭐"      # any text you like
+```
+
+Both recompose from the stored components on demand, so they work here even
+though the worksheet build writes no `manifest.json` - 11,172 outlines will not
+fit in one file. Pick text that exercises finals and horizontal vowels, not
+just 가나다: those are the placements that go wrong. If a component is faint or
 missing, re-shoot the relevant complete worksheet page and rerun the command
 in a fresh work directory.
 
@@ -198,6 +209,13 @@ enough to judge honestly. Judge each glyph **against its own source region in
 the same image** - never against your memory of the character, and never by
 scanning a grid of small glyphs.
 
+**Count the panels before you read them.** One per unique character, no
+exceptions. A blob whose crop traces to nothing is dropped from the font
+silently, and that character then has no panel at all - the worst defect
+there is, and the easiest to miss, because nothing looks wrong on the sheet in
+front of you. `audit` reports it too (`MISSING FROM FONT: …`), but notice it
+here first.
+
 **5. Hand-correct only the glyphs still wrong.** `--boxes` takes hand-corrected
 glyph boxes, keyed by the id drawn on the contact sheet, in contact-sheet
 pixels:
@@ -242,6 +260,16 @@ It prints an objective defect report and exits non-zero while defects remain:
   share brush strokes, so high `foreign` values are normal. Rules that
   minimised `foreign` were tried and made the output worse - one deleted a
   syllable's main stroke outright. Report the number; never tune against it.
+- `MISSING FROM FONT` - the character never reached the font at all. Always a
+  failure. Its box is capturing ink too faint or too small to trace; widen it
+  to cover the whole syllable and rebuild.
+
+**When `clipped` will not come down.** Widening a box helps only when the ink
+it is missing lies just outside it. Where the missing ink belongs to a stroke
+the syllable *shares* with its neighbour, the crop filter drops it however
+large the box gets, and the number stays put no matter how you edit - that is
+not your edit failing. Check the review sheet: if the glyph reads correctly
+against its source, pin the box and move on. This is what pinning is for.
 
 Deliver when `clipped` and `orphan` are clean **and** the review sheets are
 clean.

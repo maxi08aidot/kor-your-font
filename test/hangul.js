@@ -266,13 +266,17 @@ function composeGeometry() {
     ? [stacked[0], stacked[1]] : [stacked[1], stacked[0]];
   assert.ok(lead.y0 > vowel.y1, 'a horizontal vowel goes underneath its lead consonant');
 
-  // Slots have their own aspect ratios; scaling a component by sx and sy
-  // separately stretched every jamo into a bar - 4x flatter for finals.
+  // Slots have their own aspect ratios. Scaling a component by sx and sy
+  // separately stretched every jamo by whatever the slot happened to be - 4x
+  // flatter for finals, which turned them into lines. Some stretch is right
+  // for Hangul; this much never is.
   for (const c of [...withFinal, ...stacked]) {
     const w = c.x1 - c.x0, h = c.y1 - c.y0;
-    const ratio = (w / h) / (w > h * 2 ? 4 : 1); // vowels are 4:1, everything else square
-    assert.ok(ratio > 0.9 && ratio < 1.1,
-      `components must keep their proportions; got ${(w / h).toFixed(2)}:1 for a ${w > h * 2 ? '4:1' : '1:1'} component`);
+    const drawn = w / h;
+    const source = drawn > 2 ? 4 : 1; // vowels were built 4:1, everything else square
+    const stretch = Math.max(drawn / source, source / drawn);
+    assert.ok(stretch < 1.6,
+      `a component may be adapted to its slot but not deformed; ${source}:1 came out ${drawn.toFixed(2)}:1`);
   }
 }
 
