@@ -35,7 +35,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jogwangjae/kor-your-font.git"
+    "url": "git+https://github.com/maxi08aidot/kor-your-font.git"
   },
   "dependencies": {
     "pdfkit": "^0.15.0",
@@ -52,8 +52,8 @@
     "opentype.js": "^1.3.4"
   },
   "author": "jogwangjae",
-  "homepage": "https://jogwangjae.github.io/kor-your-font/",
+  "homepage": "https://maxi08aidot.github.io/kor-your-font/",
   "bugs": {
-    "url": "https://github.com/jogwangjae/kor-your-font/issues"
+    "url": "https://github.com/maxi08aidot/kor-your-font/issues"
   }
 }

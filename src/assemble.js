@@ -31,7 +31,7 @@ function buildTTF(name, glyphs, { wordSpace = 300 } = {}) {
     parts.push(`<glyph glyph-name="${gname}" unicode="${esc(g.char)}" horiz-adv-x="${g.advance}" d="${g.d}"/>`);
   }
   parts.push(`</font></defs></svg>`);
-  const ttf = svg2ttf(parts.join('\n'), { description: 'Made with kor-your-font', url: 'https://github.com/jogwangjae/kor-your-font' });
+  const ttf = svg2ttf(parts.join('\n'), { description: 'Made with kor-your-font', url: 'https://github.com/maxi08aidot/kor-your-font' });
   return Buffer.from(ttf.buffer);
 }
 

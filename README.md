@@ -35,7 +35,7 @@
 ## Use it as a Claude Code skill (the fun way)
 
 ```bash
-npx skills add jogwangjae/kor-your-font
+npx skills add maxi08aidot/kor-your-font
 ```
 
 Then in Claude Code, invoke the skill and hand it your photo:
