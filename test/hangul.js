@@ -317,9 +317,43 @@ async function shadedPageE2E() {
   assert.ok(share > 0.005, 'the strokes themselves must still be found');
 }
 
+
+// audit has to measure against the same ink the crops were cut from. It used
+// the freeform binariser for every workdir, and the Latin path uses the
+// adaptive one; the few percent they disagree by along stroke edges was
+// reported as severed strokes. A clean Latin font failed the gate with seven
+// glyphs "clipped" by up to 9%, and no box edit could move the number.
+async function latinAuditE2E() {
+  const root = path.join(__dirname, '..');
+  const dir = path.join(os.tmpdir(), 'kor-your-font-latin-audit');
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(dir, { recursive: true });
+  const mark = (x, y) => `<path d="M${x} ${y}L${x + 30} ${y + 70} M${x + 62} ${y + 8}L${x + 38} ${y + 80}" fill="none" stroke="#161616" stroke-width="10" stroke-linecap="round"/>`;
+  const photo = path.join(dir, 'note.jpg');
+  await sharp(Buffer.from(
+    `<svg width="1000" height="300" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="#f7f3ea"/>`
+    + `${mark(80, 90)}${mark(320, 90)}${mark(560, 90)}${mark(800, 90)}</svg>`
+  )).jpeg({ quality: 88 }).toFile(photo);
+
+  const work = path.join(dir, 'work');
+  const cli = (...args) => execFileSync(process.execPath, [path.join(root, 'src/cli.js'), ...args], { encoding: 'utf8' });
+  cli('make', photo, '--chars', 'ABCD', '-d', work, '--name', 'Latin Audit');
+  const report = cli('audit', '-d', work, '--chars', 'ABCD');
+  assert.match(report, /clipped 0/, `a clean Latin run must audit clean:\n${report}`);
+
+  // refine would rebuild this workdir with make-korean and orphan its labels.
+  let refused = false;
+  try {
+    cli('refine', photo, '--chars', 'ABCD', '-d', work, '--name', 'Latin Audit');
+  } catch (err) {
+    refused = /would overwrite it/.test(String(err.stderr || err.stdout || err));
+  }
+  assert.ok(refused, 'refine must refuse a workdir it did not build');
+}
+
 composeGeometry();
 
-Promise.all([koreanTemplateE2E(), koreanFreeformE2E(), koreanMultiLineE2E(), foreignInkE2E(), koreanToolingE2E(), shadedPageE2E()]).then(() => console.log('hangul e2e OK - worksheet, freeform, multi-line, foreign-ink and audit/review/refine flows work.')).catch((err) => {
+Promise.all([koreanTemplateE2E(), koreanFreeformE2E(), koreanMultiLineE2E(), foreignInkE2E(), koreanToolingE2E(), shadedPageE2E(), latinAuditE2E()]).then(() => console.log('hangul e2e OK - worksheet, freeform, multi-line, foreign-ink and audit/review/refine flows work.')).catch((err) => {
   console.error(err);
   process.exit(1);
 });

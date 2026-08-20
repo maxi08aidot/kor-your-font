@@ -70,7 +70,14 @@ Then write `work/labels.json` mapping blob id → character, e.g.
   0–9, then `.,;:!?'"-()@#&+/$`; spanish appends `ÑñÁÉÍÓÚáéíóúü¿¡`.
 - Freeform: identify each letter from the contact sheet. Uppercase vs
   lowercase for shape-twins (S/s, O/o, C/c, X/x…) is decided by relative size
-  and position - compare against neighbors you're sure of.
+  and position - compare against neighbors you're sure of. Note that crops are
+  size-normalised, so the contact sheet has thrown away the very cue you need.
+- **Check the mapping arithmetically, not by eye.** `work/blobs.json` gives
+  every blob a `row` and a `box`. If the user said they wrote five rows of
+  13/13/13/13/10, count the blobs per row and confirm x increases across each
+  one. That turns a judgement call into a proof, and it catches the failure
+  that matters most here - one extra or missing blob early on, which shifts
+  every character after it.
 - The user told you what they wrote (e.g. "ABC then abc")? Trust it, map in
   reading order (top row first, left to right), and verify visually.
 - Same letter appears twice → label the better-drawn one, `""` the other.
@@ -88,9 +95,22 @@ a grid of small glyphs in `glyphs.png` and call that a review. That method is
 unreliable in both directions: it passes glyphs that are badly broken, and it
 "finds" defects in glyphs that are fine. Two rules, always:
 
-- Compare each glyph with **its own source region** - `work/crops/<id>.png`
-  against what the font draws for it. (Korean freeform: `$DYF review` builds
-  exactly those side-by-side sheets for you.)
+- Compare each glyph with **its own source region**. `$DYF review -d work`
+  builds exactly those sheets - the source ink above what the font draws - for
+  any workdir, Latin included. Use it rather than opening `work/crops/<id>.png`
+  one at a time and comparing from memory. Count the panels: one per character.
+
+Of the three checking commands, only `review` is safe everywhere:
+
+| | Latin / template | Korean worksheet | Korean freeform |
+|---|---|---|---|
+| `review` | yes | yes | yes |
+| `audit` | yes | yes | yes |
+| `refine` | **no** | **no** | yes |
+
+`refine` rebuilds the workdir from the photo with `make-korean` on every round.
+Pointed at a workdir built any other way it would destroy it, so it refuses -
+if you want to try it, give it a new directory.
 - Never judge against your memory of how the character *should* look. The
   question is only whether the glyph matches the ink the user actually wrote.
 

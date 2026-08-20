@@ -228,6 +228,16 @@ async function main() {
     const { formatReport } = require('./audit');
     if (!positionals.length) fail('refine needs at least one photo.');
     if (!opt.chars) fail('refine requires --chars in the exact written order (use "/" between lines).');
+    // Every round rebuilds the workdir from the photo with make-korean. Aimed
+    // at a workdir built some other way, that silently destroys it: the crops
+    // and blobs are replaced and any labels.json is left describing blobs that
+    // no longer exist.
+    const existing = fs.existsSync(path.join(dir, 'blobs.json'))
+      ? JSON.parse(fs.readFileSync(path.join(dir, 'blobs.json'), 'utf8')) : null;
+    if (existing && existing.mode !== 'korean-freeform') {
+      fail(`${dir} was not built by make-korean, and refine would overwrite it.\n`
+        + 'refine belongs to the freeform Korean flow. Point it at a new directory.');
+    }
     const boxesFile = opt.boxes || path.join(dir, 'box-fixes.json');
     const result = await refine({
       photos: positionals, text: opt.chars, dir, boxesFile, name: opt.name,

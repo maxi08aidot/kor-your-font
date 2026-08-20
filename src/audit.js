@@ -8,12 +8,22 @@
 //   orphan  - components no glyph claims, i.e. ink that vanished from the font.
 const fs = require('fs');
 const path = require('path');
-const { binarizeFreeform } = require('./capture');
+const { binarize, binarizeFreeform } = require('./capture');
 const { labelComponents, assignComponents } = require('./segment');
 
 async function audit(dir, chars, { pinned = new Set() } = {}) {
   const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'blobs.json'), 'utf8'));
-  const { ink, width, height } = await binarizeFreeform(manifest.photos[0], {});
+  // Measure against the same ink the crops were cut from. The freeform path
+  // binarises with Otsu; every other path uses the adaptive local-background
+  // threshold, and the two disagree by a few percent along stroke edges. Using
+  // the wrong one makes that disagreement look like severed strokes: on a
+  // clean Latin run it reported seven glyphs "clipped" by up to 9% and failed
+  // the gate, and no box edit could ever move the number, because the ink it
+  // was counting as missing was never missing.
+  const freeform = manifest.mode === 'korean-freeform';
+  const { ink, width, height } = freeform
+    ? await binarizeFreeform(manifest.photos[0], {})
+    : await binarize(manifest.photos[0], {});
   const parts = labelComponents(ink, width, height);
   const boxes = manifest.blobs.map((b) => b.box);
   const owner = assignComponents(ink, width, boxes, parts);
