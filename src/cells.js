@@ -92,7 +92,7 @@ async function captureCells(photos, dir, items, { delta, cap, pageLabel = 'page'
     console.warn('    Anything built from these will be wrong. Re-write them smaller,');
     console.warn('    inside their boxes, re-shoot that page, and rebuild.');
   }
-  return { pad: SHEET.pad, photos: photos.slice(0, pages), blobs, labels, clipped };
+  return { mode: 'cells', pad: SHEET.pad, photos: photos.slice(0, pages), blobs, labels, clipped };
 }
 
 module.exports = { SHEET, A4, PER_PAGE, cellBox, captureCells };

@@ -19,6 +19,11 @@ async function binarize(file, { delta = 40, cap = 165, normalise = false } = {})
   }
   let pipeline = sharp(file, { limitInputPixels: 1e9 })
     .rotate() // honour EXIF orientation
+    // Transparency has to become paper before anything else looks at it. A PNG
+    // exported from a drawing app or a PDF viewer carries black in the RGB of
+    // its transparent pixels, so converting straight to grey turns the whole
+    // sheet dark - one real submission came through 90% "ink".
+    .flatten({ background: '#ffffff' })
     .grayscale();
   // Normalisation is off by default, and photographs are why. It stretches the
   // histogram between percentiles, and a worksheet is ~98% paper - so on a
@@ -58,7 +63,7 @@ async function binarize(file, { delta = 40, cap = 165, normalise = false } = {})
 // texture becomes connected foreground. Keep only the darkest ≈1.2% instead.
 async function binarizeFreeform(file, { cap } = {}) {
   const { data, info } = await sharp(file, { limitInputPixels: 1e9 })
-    .rotate().grayscale()
+    .rotate().flatten({ background: '#ffffff' }).grayscale()
     .resize({ width: MAX_SIDE, height: MAX_SIDE, fit: 'inside', withoutEnlargement: true })
     .median(3).raw().toBuffer({ resolveWithObject: true });
   const histogram = new Uint32Array(256);

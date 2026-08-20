@@ -402,9 +402,41 @@ async function charSheetE2E() {
     `page two must be measured against page two:\n${report}`);
 }
 
+
+// Images with an alpha channel arrive constantly - PNGs exported from a
+// drawing app, a PDF viewer, a screenshot. Their transparent pixels carry
+// black in RGB, so converting straight to grey turns the sheet dark: the
+// first real submission came through as 90% ink and the build reported no
+// ink in a cell that plainly had some.
+async function transparentPageE2E() {
+  const { binarize, binarizeFreeform } = require('../src/capture');
+  const dir = path.join(os.tmpdir(), 'kor-your-font-alpha');
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(dir, { recursive: true });
+  const marks = [];
+  for (let i = 0; i < 6; i++) {
+    const x = 90 + (i % 3) * 240, y = 110 + Math.floor(i / 3) * 200;
+    marks.push(`<path d="M${x} ${y}L${x + 70} ${y + 90}" fill="none" stroke="#141414" stroke-width="14" stroke-linecap="round"/>`);
+  }
+  // No background rect: everything but the strokes stays transparent.
+  const png = path.join(dir, 'page.png');
+  await sharp(Buffer.from(`<svg width="800" height="500" xmlns="http://www.w3.org/2000/svg">${marks.join('')}</svg>`))
+    .png().toFile(png);
+  assert.equal((await sharp(png).metadata()).hasAlpha, true, 'the fixture must actually be transparent');
+
+  for (const [name, fn] of [['binarize', binarize], ['binarizeFreeform', binarizeFreeform]]) {
+    const { ink } = await fn(png, {});
+    let inked = 0;
+    for (const v of ink) inked += v;
+    const share = inked / ink.length;
+    assert.ok(share < 0.15, `${name}: transparency must read as paper, got ${(share * 100).toFixed(1)}% ink`);
+    assert.ok(share > 0.002, `${name}: the strokes themselves must still be found`);
+  }
+}
+
 composeGeometry();
 
-Promise.all([koreanTemplateE2E(), koreanFreeformE2E(), koreanMultiLineE2E(), foreignInkE2E(), koreanToolingE2E(), shadedPageE2E(), latinAuditE2E(), charSheetE2E()]).then(() => console.log('hangul e2e OK - worksheet, freeform, multi-line, foreign-ink and audit/review/refine flows work.')).catch((err) => {
+Promise.all([koreanTemplateE2E(), koreanFreeformE2E(), koreanMultiLineE2E(), foreignInkE2E(), koreanToolingE2E(), shadedPageE2E(), latinAuditE2E(), charSheetE2E(), transparentPageE2E()]).then(() => console.log('hangul e2e OK - worksheet, freeform, multi-line, foreign-ink and audit/review/refine flows work.')).catch((err) => {
   console.error(err);
   process.exit(1);
 });

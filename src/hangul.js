@@ -223,7 +223,7 @@ async function segmentKoreanTemplate(photos, dir, { delta, cap } = {}) {
   const items = parts.map((part) => ({ label: part.key, name: part.key }));
   const { pad, photos: used, blobs, labels, clipped } =
     await captureCells(photos, dir, items, { delta, cap, pageLabel: 'korean-page' });
-  const manifest = { pad, photos: used, blobs, clipped };
+  const manifest = { mode: 'cells', pad, photos: used, blobs, clipped };
   fs.writeFileSync(path.join(dir, 'blobs.json'), JSON.stringify(manifest, null, 2));
   fs.writeFileSync(path.join(dir, 'korean-labels.json'), JSON.stringify(labels, null, 2));
   return manifest;

@@ -59,10 +59,18 @@ async function audit(dir, chars, { pinned = new Set() } = {}) {
       }
     }
     for (let id = 1; id < parts.areas.length; id++) {
-      total += parts.areas[id];
       const who = owner.get(id);
-      if (who === undefined || who < 0) { orphan += parts.areas[id]; continue; }
-      ownedTotal[here[who].i] += parts.areas[id];
+      if (who !== undefined && who >= 0) {
+        total += parts.areas[id];
+        ownedTotal[here[who].i] += parts.areas[id];
+        continue;
+      }
+      // On a printed sheet the page carries ink nobody wrote - the heading,
+      // the instructions, the cell rules. It is outside every cell, so it is
+      // not a stroke that went missing and must not fail the run.
+      if (manifest.mode === 'cells') continue;
+      total += parts.areas[id];
+      orphan += parts.areas[id];
     }
     pages.push({ parts, owner, width, height, index: here.map(({ i }) => i) });
   }

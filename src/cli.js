@@ -179,7 +179,7 @@ async function main() {
       cap: opt.cap === undefined ? undefined : Number(opt.cap),
       pageLabel: 'sheet-page',
     });
-    const manifest = { pad: captured.pad, photos: captured.photos, blobs: captured.blobs, clipped: captured.clipped };
+    const manifest = { mode: 'cells', pad: captured.pad, photos: captured.photos, blobs: captured.blobs, clipped: captured.clipped };
     fsx.writeFileSync(path.join(dir, 'blobs.json'), JSON.stringify(manifest, null, 2));
     fsx.writeFileSync(path.join(dir, 'labels.json'), JSON.stringify(captured.labels, null, 2));
     console.log(`Captured ${captured.blobs.length} cells. Crops: ${dir}/crops/  Labels: ${dir}/labels.json`);
