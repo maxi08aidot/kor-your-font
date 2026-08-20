@@ -16,12 +16,19 @@
 <meta name="twitter:image" content="https://maxi08aidot.github.io/kor-your-font/hero.jpg">
 <meta name="twitter:image:alt" content="종이에 손으로 쓴 글씨가 그대로 폰트가 되는 모습">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="preload" href="SiteHand.woff2" as="font" type="font/woff2" crossorigin>
 <style>
-  /* Display text should be set in a font this tool made from handwriting -
-     that is the product demonstrating itself. There is no such font here
-     yet: the one we inherited was the upstream author's own handwriting and
-     was not ours to publish. Until a replacement is written for this page,
-     display text falls back with the body text. */
+  /* The display face is the product demonstrating itself: it was made by this
+     tool from a sheet of handwriting, and it holds exactly the characters this
+     page sets in it - 67 of them, no more. Change a heading and the new
+     character has no glyph and quietly falls back to system-ui mid-word, so
+     `npm run check:site-font` fails the build instead. The fallback stack
+     matches body text, so a miss degrades rather than disappears. */
+  @font-face {
+    font-family: 'Site Hand';
+    src: url('SiteHand.woff2') format('woff2');
+    font-display: swap;
+  }
 
   :root {
     --paper: #faf7f1;
@@ -44,7 +51,7 @@
   }
 
   .hand {
-    font-family: inherit;
+    font-family: 'Site Hand', system-ui, -apple-system, sans-serif;
     text-transform: uppercase;
     font-weight: normal;
     letter-spacing: 0.02em;
@@ -104,7 +111,7 @@
   .install code .dim { color: #8d887e; }
   .copy {
     all: unset; cursor: pointer;
-    font-family: inherit; text-transform: uppercase;
+    font-family: 'Site Hand', system-ui, -apple-system, sans-serif; text-transform: uppercase;
     font-size: 1rem; color: var(--paper);
     background: var(--accent);
     border-radius: 9px; padding: 8px 16px 6px;
@@ -194,7 +201,7 @@
   }
   #demo-download {
     display: inline-block;
-    font-family: inherit; text-transform: uppercase;
+    font-family: 'Site Hand', system-ui, -apple-system, sans-serif; text-transform: uppercase;
     color: var(--paper); background: var(--accent);
     text-decoration: none;
     border-radius: 9px; padding: 10px 20px 8px;

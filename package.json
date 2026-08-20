@@ -17,8 +17,9 @@
     "node": ">=18"
   },
   "scripts": {
-    "test": "node test/e2e.js && node test/hangul.js",
-    "build:demo": "esbuild site/demo.src.js --bundle --minify --format=iife --outfile=site/demo.js --external:node:fs --external:wawoff2 --log-level=error"
+    "test": "node test/e2e.js && node test/hangul.js && node tools/check-site-font.js",
+    "build:demo": "esbuild site/demo.src.js --bundle --minify --format=iife --outfile=site/demo.js --external:node:fs --external:wawoff2 --log-level=error",
+    "check:site-font": "node tools/check-site-font.js"
   },
   "keywords": [
     "font",
