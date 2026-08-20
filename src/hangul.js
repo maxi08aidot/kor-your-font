@@ -498,6 +498,46 @@ function componentExtents(parts, width, height, ids) {
 // column-ink profile picks the cut columns that carry the least ink while
 // keeping cell widths even, so real gaps between syllables cost nothing and a
 // cut through a connecting brush stroke is only taken when unavoidable.
+// A straight cut cannot separate syllables whose brush strokes interlock: the
+// vertical line has to cross ink somewhere, and whatever it crosses lands in
+// both crops. Let the boundary bend instead - find the top-to-bottom path that
+// crosses the least ink, inside a window around the straight cut - so the crop
+// can drop what falls on the neighbour's side. Standard practice for touching
+// handwritten characters; Hangul cursive is the case it exists for.
+function carveSeam(isInk, y0, y1, lo, hi, at) {
+  const rows = y1 - y0 + 1, span = hi - lo + 1;
+  if (rows <= 0 || span <= 0) return null;
+  const INK = 1000;          // crossing a stroke must dominate every other term
+  const PULL = 1;            // ... but among equals, stay near the straight cut
+  const cost = new Float64Array(rows * span);
+  const back = new Int32Array(rows * span).fill(-1);
+  for (let i = 0; i < span; i++) {
+    const x = lo + i;
+    cost[i] = (isInk(x, y0) ? INK : 0) + PULL * Math.abs(x - at);
+  }
+  for (let r = 1; r < rows; r++) {
+    const y = y0 + r, base = r * span, prev = base - span;
+    for (let i = 0; i < span; i++) {
+      let best = Infinity, from = -1;
+      for (let d = -1; d <= 1; d++) {
+        const j = i + d;
+        if (j < 0 || j >= span) continue;
+        if (cost[prev + j] < best) { best = cost[prev + j]; from = j; }
+      }
+      const x = lo + i;
+      cost[base + i] = best + (isInk(x, y) ? INK : 0) + PULL * Math.abs(x - at);
+      back[base + i] = from;
+    }
+  }
+  let bestI = 0, bestC = Infinity;
+  const last = (rows - 1) * span;
+  for (let i = 0; i < span; i++) if (cost[last + i] < bestC) { bestC = cost[last + i]; bestI = i; }
+  const seam = new Int32Array(rows);
+  let i = bestI;
+  for (let r = rows - 1; r >= 0; r--) { seam[r] = lo + i; i = back[r * span + i]; if (i < 0) i = bestI; }
+  return seam;
+}
+
 function cutLineIntoCells(parts, count, ctx) {
   const x0 = Math.min(...parts.map((b) => b.x0)), x1 = Math.max(...parts.map((b) => b.x1));
   const y0 = Math.min(...parts.map((b) => b.y0)), y1 = Math.max(...parts.map((b) => b.y1));
@@ -581,6 +621,30 @@ function cutLineIntoCells(parts, count, ctx) {
   let end = width;
   for (let k = count; k > 0; k--) { const start = cutTable[k - 1][end]; if (start < 0) return null; cuts.unshift(start); end = start; }
   const bounds = [...cuts, width];
+  // Bend each internal boundary onto the thinnest ink it can reach.
+  // Narrow on purpose. The seam is there to weave around a stroke the straight
+  // cut would clip, not to relocate the boundary: given a wide corridor it
+  // happily walks to the nearest blank column, which in Hangul is as often the
+  // gap between a syllable's own jamo as the gap between two syllables.
+  const WIN = Math.max(4, Math.round(target * 0.15));
+  const seams = [];
+  for (let j = 0; j + 1 < count; j++) {
+    const at = x0 + bounds[j + 1];
+    let lo = Math.max(x0, at - WIN);
+    const hi = Math.min(x1, at + WIN);
+    const before = seams[j - 1];
+    // Seams must stay in order, or a cell would be handed a negative width.
+    if (before) { let m = -Infinity; for (const v of before) if (v > m) m = v; lo = Math.max(lo, m + 1); }
+    seams.push(lo <= hi ? carveSeam(isRender, y0, y1, lo, hi, at) : null);
+  }
+  const inCell = (x, y, i) => {
+    const r = y - y0;
+    const left = i > 0 ? seams[i - 1] : null;
+    const right = i < count - 1 ? seams[i] : null;
+    if (left && x < left[r]) return false;
+    if (right && x >= right[r]) return false;
+    return true;
+  };
   const cells = [];
   // Tally, per whole-image component, how its pixels distribute across the
   // cells of this line. A stroke that dips below the line band - the tail of a
@@ -591,10 +655,10 @@ function cutLineIntoCells(parts, count, ctx) {
   const share = new Map(); // component id -> per-cell pixel counts
   if (ctx && ctx.parts) {
     for (let i = 0; i < count; i++) {
-      const from = x0 + bounds[i], to = x0 + bounds[i + 1] - 1;
+      const from = Math.max(x0, x0 + bounds[i] - WIN), to = Math.min(x1, x0 + bounds[i + 1] - 1 + WIN);
       for (let y = y0; y <= y1; y++) {
         for (let x = from; x <= to; x++) {
-          if (!isRender(x, y)) continue;
+          if (!isRender(x, y) || !inCell(x, y, i)) continue;
           const id = ctx.parts.labels[y * ctx.width + x];
           let row = share.get(id);
           if (!row) { row = new Int32Array(count); share.set(id, row); }
@@ -627,12 +691,12 @@ function cutLineIntoCells(parts, count, ctx) {
   }
   const extents = ctx && ctx.parts ? componentExtents(ctx.parts, ctx.width, ctx.height, [...owner.keys()]) : new Map();
   for (let i = 0; i < count; i++) {
-    const from = x0 + bounds[i], to = x0 + bounds[i + 1] - 1;
+    const from = Math.max(x0, x0 + bounds[i] - WIN), to = Math.min(x1, x0 + bounds[i + 1] - 1 + WIN);
     let bx0 = null, by0 = null, bx1 = null, by1 = null, area = 0;
     if (ctx && ctx.ink) {
       for (let y = y0; y <= y1; y++) {
         for (let x = from; x <= to; x++) {
-          if (!isRender(x, y)) continue;
+          if (!isRender(x, y) || !inCell(x, y, i)) continue;
           area++;
           if (bx0 === null || x < bx0) bx0 = x;
           if (bx1 === null || x > bx1) bx1 = x;
@@ -653,15 +717,41 @@ function cutLineIntoCells(parts, count, ctx) {
       bx0 = Math.min(bx0, e.x0); by0 = Math.min(by0, e.y0);
       bx1 = Math.max(bx1, e.x1); by1 = Math.max(by1, e.y1);
     }
-    cells.push({ x0: bx0, y0: by0, x1: bx1, y1: by1, area, core });
+    cells.push({
+      x0: bx0, y0: by0, x1: bx1, y1: by1, area, core,
+      // Carried through to the crop so a stroke the boundary runs through is
+      // kept only on the side that owns it.
+      seamL: i > 0 ? seams[i - 1] : null,
+      seamR: i < count - 1 ? seams[i] : null,
+      seamY0: y0,
+    });
   }
   return cells;
 }
 
 // Single line of handwriting -> one glyph box per expected character.
+// A modern Hangul syllable is written into a roughly square space, so its width
+// tracks the line height. Latin has no such rule - "i" and "m" differ by a
+// factor of five - so this may only judge a line that is actually Hangul.
+function chunksLookLikeSyllables(chunks, parts, chars) {
+  const hangul = chars.filter(isHangulSyllable).length;
+  if (hangul < 0.8 * chars.length) return true;
+  const y0 = Math.min(...parts.map((b) => b.y0)), y1 = Math.max(...parts.map((b) => b.y1));
+  const height = y1 - y0 + 1;
+  if (height <= 0) return true;
+  return chunks.every((c) => {
+    const w = c.x1 - c.x0 + 1;
+    return w >= 0.45 * height && w <= 1.6 * height;
+  });
+}
+
 function groupLineForChars(parts, chars, ctx) {
   const chunks = dropDebrisChunks(overlappingChunks(parts));
-  if (chunks.length === chars.length) return chunks;
+  // Matching counts are not proof of a matching partition. Where one syllable's
+  // vowel is joined to the next syllable's body, the chunk count still comes out
+  // right while the split is a syllable off - "알아둬" chunks as [알][ㅇ][ㅏ둬].
+  // Only trust the shortcut when every chunk is also syllable-shaped.
+  if (chunks.length === chars.length && chunksLookLikeSyllables(chunks, parts, chars)) return chunks;
   // Ink-profile cutting sees the whole line at once and beats chunk-by-chunk
   // splitting whenever syllables run together, which is the norm in cursive.
   // Cut using only the components inside the chunks that survived debris
@@ -757,6 +847,8 @@ async function segmentKoreanFreeform(photos, dir, { delta, cap, expectedChars, b
         }
         b.x0 = Math.max(0, Math.min(x0, x1)); b.x1 = Math.min(width - 1, Math.max(x0, x1));
         b.y0 = Math.max(0, Math.min(y0, y1)); b.y1 = Math.min(height - 1, Math.max(y0, y1));
+        // A hand-drawn box overrules the automatic boundary, seam included.
+        b.seamL = null; b.seamR = null;
         let area = 0;
         for (let y = b.y0; y <= b.y1; y++) for (let x = b.x0; x <= b.x1; x++) if (ink[y * width + x]) area++;
         b.area = area;

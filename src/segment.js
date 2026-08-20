@@ -103,13 +103,26 @@ async function writeCrop(ink, width, blob, file, parts, owner, ownIndex) {
     // away from the rest of its syllable, and requiring contact deleted it.
     return here >= 0.25 * parts.areas[id];
   };
+  // A stroke shared with the neighbour survives `keep` on purpose - it is
+  // genuinely part of both syllables - but only the half on this side of the
+  // boundary belongs here. The seam says where that half ends. A stroke this
+  // glyph owns outright is never trimmed: its descender may well cross.
+  const { seamL, seamR, seamY0 } = blob;
+  const beyondSeam = (x, y) => {
+    if (seamL) { const r = y - seamY0; if (r >= 0 && r < seamL.length && x < seamL[r]) return true; }
+    if (seamR) { const r = y - seamY0; if (r >= 0 && r < seamR.length && x >= seamR[r]) return true; }
+    return false;
+  };
   const buf = Buffer.alloc(cw * ch, 255);
   for (let y = 0; y < h; y++) {
     const src = (blob.y0 + y) * width + blob.x0;
     const dst = (y + PAD) * cw + PAD;
     for (let x = 0; x < w; x++) {
       if (!ink[src + x]) continue;
-      if (parts && !keep(parts.labels[src + x])) continue;
+      const id = parts ? parts.labels[src + x] : -1;
+      if (parts && !keep(id)) continue;
+      if ((seamL || seamR) && (!owner || owner.get(id) !== ownIndex)
+          && beyondSeam(blob.x0 + x, blob.y0 + y)) continue;
       buf[dst + x] = 0;
     }
   }

@@ -444,7 +444,42 @@ async function transparentPageE2E() {
   }
 }
 
+// Regression: a chunk count that matches the character count is not proof that
+// the split is right. In "알아둬" the vowel of the middle syllable is written
+// into the body of the last one, so the page still chunks into three - but as
+// [알][ㅇ][ㅏ둬]. The middle box was 37px wide against a 113px line and traced
+// to a bare circle, while the last box swallowed a syllable and a half.
+function syllableShapePrior() {
+  const { groupPartsForExpectedText } = require('../src/hangul');
+  const W = 500, H = 120;
+  const ink = new Uint8Array(W * H);
+  const fill = (x0, x1, y0, y1) => {
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) ink[y * W + x] = 1;
+  };
+  fill(60, 160, 10, 110);    // 알
+  fill(200, 240, 20, 100);   // the ㅇ of 아
+  fill(255, 275, 10, 110);   // the ㅏ of 아 ...
+  fill(276, 284, 55, 60);    // ... joined to 둬 by a thin brush bridge
+  fill(285, 430, 10, 110);   // 둬
+  const box = (x0, y0, x1, y1) => ({ x0, y0, x1, y1, area: (x1 - x0) * (y1 - y0) });
+  // The bridge makes ㅏ, 둬 a single component: three components, three
+  // syllables, and a partition that is a syllable out of step.
+  const parts = [box(60, 10, 160, 110), box(200, 20, 240, 100), box(255, 10, 430, 110)];
+  const ctx = { ink, render: ink, width: W, height: H };
+
+  const out = groupPartsForExpectedText(parts, '알아둬', ctx);
+  assert.equal(out.length, 3, 'three syllables must come back');
+  for (const [i, b] of out.entries()) {
+    const ratio = (b.x1 - b.x0 + 1) / 101;
+    assert.ok(ratio >= 0.45 && ratio <= 1.6,
+      `box ${i} is not syllable-shaped: width/height = ${ratio.toFixed(2)}`);
+  }
+  // The defect itself: 아 must own its vowel rather than leaving it to 둬.
+  assert.ok(out[1].x1 > 250, `아 must reach its own vowel, ended at ${out[1].x1}`);
+}
+
 composeGeometry();
+syllableShapePrior();
 
 Promise.all([koreanTemplateE2E(), koreanFreeformE2E(), koreanMultiLineE2E(), foreignInkE2E(), koreanToolingE2E(), shadedPageE2E(), latinAuditE2E(), charSheetE2E(), transparentPageE2E()]).then(() => console.log('hangul e2e OK - worksheet, freeform, multi-line, foreign-ink and audit/review/refine flows work.')).catch((err) => {
   console.error(err);

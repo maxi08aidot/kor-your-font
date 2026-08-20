@@ -433,10 +433,29 @@ function cutLineIntoCells(parts, count, ctx) {
   return cells;
 }
 
+// A modern Hangul syllable is written into a roughly square space, so its width
+// tracks the line height. Latin has no such rule - "i" and "m" differ by a
+// factor of five - so this may only judge a line that is actually Hangul.
+function chunksLookLikeSyllables(chunks, parts, chars) {
+  const hangul = chars.filter(isHangul).length;
+  if (hangul < 0.8 * chars.length) return true;
+  const y0 = Math.min(...parts.map((b) => b.y0)), y1 = Math.max(...parts.map((b) => b.y1));
+  const height = y1 - y0 + 1;
+  if (height <= 0) return true;
+  return chunks.every((c) => {
+    const w = c.x1 - c.x0 + 1;
+    return w >= 0.45 * height && w <= 1.6 * height;
+  });
+}
+
 // Single line of handwriting -> one glyph box per expected character.
 function groupLineForChars(parts, chars, ctx) {
   const chunks = dropDebrisChunks(chunksByOverlap(parts));
-  if (chunks.length === chars.length) return chunks;
+  // Matching counts are not proof of a matching partition. Where one syllable's
+  // vowel is written into the body of the next, the chunk count still comes out
+  // right while the split is a syllable off - "알아둬" chunks as [알][ㅇ][ㅏ둬].
+  // Only trust the shortcut when every chunk is also syllable-shaped.
+  if (chunks.length === chars.length && chunksLookLikeSyllables(chunks, parts, chars)) return chunks;
   // Cut using only the components inside the chunks that survived debris
   // removal - otherwise a speck at the frame edge still stretches the line's
   // x-range and the final cell lands on the speck instead of the last syllable.
