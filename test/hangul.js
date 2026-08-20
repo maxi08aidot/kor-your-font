@@ -222,6 +222,62 @@ async function koreanToolingE2E() {
     'refine must leave a hand-supplied box untouched');
 }
 
+
+// Composition geometry. Both defects this guards against shipped in a font
+// that passed every existing check: the syllable count was right, the TTF was
+// valid, and almost nothing was readable.
+function composeGeometry() {
+  const svgpath = require('svgpath');
+  const { requiredComponents, componentKey, composeSyllable } = require('../src/hangul');
+
+  // Hand-built components with known aspect ratios, so the placement can be
+  // read straight off the output: leads square, vowels four times as wide.
+  const rect = (w, h) => `M0 0L${w} 0L${w} ${h}L0 ${h}Z`;
+  const parts = {};
+  for (const { role, key } of requiredComponents()) {
+    parts[key] = role === 'V' ? rect(400, 100) : rect(200, 200);
+  }
+  // One subpath per placed component.
+  const clusters = (d) => svgpath(d).abs().toString().split(/(?=M)/).filter((p) => p.trim()).map((p) => {
+    const xs = [], ys = [];
+    svgpath(p).abs().iterate((seg) => {
+      for (let i = 1; i + 1 < seg.length + 1; i += 2) {
+        if (typeof seg[i + 1] !== 'number') break;
+        xs.push(seg[i]); ys.push(seg[i + 1]);
+      }
+    });
+    return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
+  });
+
+  // A final consonant belongs at the bottom of the block. The slot table is
+  // written with y measured downward; applied as font coordinates it put every
+  // final on top of its syllable.
+  const withFinal = clusters(composeSyllable(parts, 'ㄱ', 'ㅏ', 'ㄱ')).sort((a, b) => a.y0 - b.y0);
+  assert.equal(withFinal.length, 3, 'lead, vowel and final should each be placed');
+  assert.ok(withFinal[0].y1 < 320,
+    `the final must sit at the bottom of the em square, found it spanning to y=${withFinal[0].y1}`);
+  assert.ok(withFinal[1].y0 > withFinal[0].y1,
+    'the final must be clear of the lead and vowel above it');
+
+  // With a horizontal vowel the lead sits above it, not below.
+  const stacked = clusters(composeSyllable(parts, 'ㄱ', 'ㅗ', ''));
+  assert.equal(stacked.length, 2);
+  const [lead, vowel] = stacked[0].y1 - stacked[0].y0 > stacked[1].y1 - stacked[1].y0
+    ? [stacked[0], stacked[1]] : [stacked[1], stacked[0]];
+  assert.ok(lead.y0 > vowel.y1, 'a horizontal vowel goes underneath its lead consonant');
+
+  // Slots have their own aspect ratios; scaling a component by sx and sy
+  // separately stretched every jamo into a bar - 4x flatter for finals.
+  for (const c of [...withFinal, ...stacked]) {
+    const w = c.x1 - c.x0, h = c.y1 - c.y0;
+    const ratio = (w / h) / (w > h * 2 ? 4 : 1); // vowels are 4:1, everything else square
+    assert.ok(ratio > 0.9 && ratio < 1.1,
+      `components must keep their proportions; got ${(w / h).toFixed(2)}:1 for a ${w > h * 2 ? '4:1' : '1:1'} component`);
+  }
+}
+
+composeGeometry();
+
 Promise.all([koreanTemplateE2E(), koreanFreeformE2E(), koreanMultiLineE2E(), foreignInkE2E(), koreanToolingE2E()]).then(() => console.log('hangul e2e OK - worksheet, freeform, multi-line, foreign-ink and audit/review/refine flows work.')).catch((err) => {
   console.error(err);
   process.exit(1);

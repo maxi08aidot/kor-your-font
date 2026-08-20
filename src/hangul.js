@@ -50,8 +50,61 @@ function placeComponent(d, cropSize, pad, { inset = 60 } = {}) {
   return fixWinding(svgpath(d).translate(-pad, -pad).scale(scale, -scale).translate(x, 1000 - y).round(1).toString());
 }
 
+// Bounding box of a placed component. Control points can sit slightly outside
+// the drawn curve, so this is a hair generous - which is the safe direction:
+// it can only leave a component a little smaller than its slot.
+function pathBox(d) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  let cx = 0, cy = 0;
+  const see = (x, y) => {
+    if (x < x0) x0 = x;
+    if (x > x1) x1 = x;
+    if (y < y0) y0 = y;
+    if (y > y1) y1 = y;
+  };
+  svgpath(d).abs().unarc().iterate((seg) => {
+    const cmd = seg[0];
+    if (cmd === 'H') { cx = seg[1]; see(cx, cy); return; }
+    if (cmd === 'V') { cy = seg[1]; see(cx, cy); return; }
+    if (cmd === 'Z') return;
+    for (let i = 1; i + 1 < seg.length + 1; i += 2) {
+      if (typeof seg[i + 1] !== 'number') break;
+      cx = seg[i]; cy = seg[i + 1];
+      see(cx, cy);
+    }
+  });
+  if (!Number.isFinite(x0)) return { x0: 0, y0: 0, x1: 1000, y1: 1000 };
+  return { x0, y0, x1, y1 };
+}
+
+// Fit a component into its slot.
+//
+// Two things this must get right, both of which were wrong before:
+//
+// Scale uniformly. `placeComponent` normalises every component into a square
+// preserving its aspect, so scaling by the slot's sx and sy separately
+// stretches the letterform by whatever the slot's aspect happens to be - 2x
+// flatter for a lead consonant over a horizontal vowel, 4x for a final. That
+// turns jamo into bars and is why syllables with a final were unreadable.
+//
+// Read the slot's y as measuring downward. The slot table is written that way
+// - lead 55, vowel 400, final 715 descending down the block - but placed
+// components are in font coordinates, where y grows upward. Applied directly,
+// every syllable came out vertically mirrored: finals on top, horizontal
+// vowels above their lead.
 function transform(d, { x, y, sx, sy }) {
-  return svgpath(d).scale(sx, sy).translate(x, y).round(1).toString();
+  const box = pathBox(d);
+  const w = Math.max(1, box.x1 - box.x0), h = Math.max(1, box.y1 - box.y0);
+  const slotW = 1000 * sx, slotH = 1000 * sy;
+  const scale = Math.min(slotW / w, slotH / h);
+  const left = x + (slotW - w * scale) / 2;
+  const top = y + (slotH - h * scale) / 2;
+  const bottom = 1000 - top - h * scale;
+  return svgpath(d)
+    .scale(scale, scale)
+    .translate(left - box.x0 * scale, bottom - box.y0 * scale)
+    .round(1)
+    .toString();
 }
 
 function slots(vowel, hasFinal) {
