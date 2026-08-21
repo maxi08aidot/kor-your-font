@@ -196,19 +196,23 @@ function generateKoreanTemplate(out, { labelFont } = {}) {
   const perPage = TEMPLATE.cols * TEMPLATE.rows;
   for (let page = 0; page * perPage < parts.length; page++) {
     if (page) doc.addPage();
-    doc.fontSize(14).fillColor('#999').text(`kor-your-font 한글 - page ${page + 1}`, TEMPLATE.margin, TEMPLATE.margin, { lineBreak: false });
+    // Helvetica has no Hangul, so anything Korean must be drawn in the label
+    // font or it prints as mojibake - which is what the header used to do.
+    if (koreanFont) doc.font(koreanFont);
+    doc.fontSize(14).fillColor('#999').text(`kor-your-font 한글 자모 - ${page + 1}쪽 / ${Math.ceil(parts.length / perPage)}쪽`, TEMPLATE.margin, TEMPLATE.margin, { lineBreak: false });
     doc.fontSize(8).fillColor('#aaa').text(
       koreanFont
-        ? 'Write the jamo shown in each cell, large and centered. Photograph the full page from above.'
+        ? '각 칸에 표시된 자모를 칸 가득 크게, 가운데에 하나씩 쓰세요. 칸 선에 닿지 않게 하고, 다 쓰면 페이지 전체를 위에서 똑바로 찍으세요.'
         : 'Open the accompanying -map.txt file. Write the indicated jamo large in each cell. Photograph the full page from above.',
       TEMPLATE.margin, TEMPLATE.margin + 22, { width: gridW }
     );
+    doc.font('Helvetica');
     parts.slice(page * perPage, (page + 1) * perPage).forEach((part, i) => {
       const x = TEMPLATE.margin + (i % TEMPLATE.cols) * cw;
       const y = TEMPLATE.margin + TEMPLATE.header + Math.floor(i / TEMPLATE.cols) * ch;
       doc.rect(x, y, cw - 4, ch - 4).lineWidth(0.8).stroke('#c8c8c8');
-      const role = part.role === 'L' ? 'initial' : part.role === 'V' ? 'vowel'
-        : part.role === 'T' ? 'final' : 'as written';
+      const role = part.role === 'L' ? '초성' : part.role === 'V' ? '중성'
+        : part.role === 'T' ? '종성' : '그대로';
       if (koreanFont) {
         doc.font(koreanFont).fontSize(14).fillColor('#aaa').text(`${role} ${part.char}`, x + 3, y + 3, { lineBreak: false });
         doc.font('Helvetica');
