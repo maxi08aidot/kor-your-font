@@ -12,7 +12,13 @@ const MAX_SIDE = 4200;
  *   cap:   absolute grey ceiling for ink (after normalise) - kills printed grey guides
  * @returns {{ink: Uint8Array, width: number, height: number, gray: Buffer}} ink: 1 = ink
  */
-async function binarize(file, { delta = 40, cap = 165, normalise = false } = {}) {
+// Nothing lighter than this can ever become ink, whatever the local paper
+// tone. Anything a worksheet prints for the reader - cell labels, guide
+// outlines - has to sit above it, or the sheet is captured along with the
+// handwriting. Exported so the template cannot drift away from it by accident.
+const INK_CAP = 165;
+
+async function binarize(file, { delta = 40, cap = INK_CAP, normalise = false } = {}) {
   const dims = await sharp(file, { limitInputPixels: 1e9 }).metadata();
   if ((dims.width || 0) < 16 || (dims.height || 0) < 16) {
     throw new Error(`Image is too small to process (${dims.width}x${dims.height}) - need at least 16x16 px.`);
@@ -135,4 +141,4 @@ function morph(ink, width, height, grow) {
   return out;
 }
 
-module.exports = { binarize, binarizeFreeform, MAX_SIDE };
+module.exports = { binarize, binarizeFreeform, MAX_SIDE, INK_CAP };

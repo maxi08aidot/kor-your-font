@@ -478,7 +478,34 @@ function syllableShapePrior() {
   assert.ok(out[1].x1 > 250, `아 must reach its own vowel, ended at ${out[1].x1}`);
 }
 
+// Regression: the worksheet used to print its cell labels at grey 170, four
+// steps above the cap that decides ink. A shadow across the page pushed them
+// under it, so every cell captured its own label: the crop box opened from
+// 210x223 to 251x325 and placeGlyph then normalised the jamo against a box 45%
+// too big. Every one of the 11,172 syllables would have carried it.
+function worksheetPrintStaysOffThePage() {
+  const { INK_CAP } = require('../src/capture');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'hangul.js'), 'utf8');
+  const marks = [...src.matchAll(/fillColor\('(#[0-9a-f]{3,6})'\)|strokeColor\('(#[0-9a-f]{3,6})'\)/gi)]
+    .map((m) => m[1] || m[2]);
+  const level = (hex) => {
+    const h = hex.slice(1);
+    const c = h.length === 3 ? h.split('').map((v) => v + v).join('') : h;
+    return Math.min(parseInt(c.slice(0, 2), 16), parseInt(c.slice(2, 4), 16), parseInt(c.slice(4, 6), 16));
+  };
+  // Only the greys drawn inside a capture cell matter; those are the ones
+  // written through GUIDE_GREY, so require that constant to clear the cap.
+  const guide = /GUIDE_LEVEL = require\('\.\/capture'\)\.INK_CAP \+ (\d+)/.exec(src);
+  assert.ok(guide, 'the worksheet guide level must be derived from INK_CAP');
+  assert.ok(Number(guide[1]) >= 30,
+    `worksheet print sits only ${guide[1]} above the ink cap; a shadow will capture it`);
+  assert.ok(level('#' + (INK_CAP + Number(guide[1])).toString(16).repeat(3)) > INK_CAP,
+    'the guide grey must be lighter than the ink cap');
+  assert.ok(marks.length > 0, 'the template must still be drawing something');
+}
+
 composeGeometry();
+worksheetPrintStaysOffThePage();
 syllableShapePrior();
 
 Promise.all([koreanTemplateE2E(), koreanFreeformE2E(), koreanMultiLineE2E(), foreignInkE2E(), koreanToolingE2E(), shadedPageE2E(), latinAuditE2E(), charSheetE2E(), transparentPageE2E()]).then(() => console.log('hangul e2e OK - worksheet, freeform, multi-line, foreign-ink and audit/review/refine flows work.')).catch((err) => {

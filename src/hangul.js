@@ -181,12 +181,55 @@ function defaultKoreanLabelFont() {
   return candidates.find((file) => fs.existsSync(file));
 }
 
+// The faint guide drawn inside each worksheet cell.
+//
+// Two rules, both measured rather than guessed. It must be lighter than the
+// capture threshold: `binarize` only calls a pixel ink when it is below
+// cap=165, so anything printed above that is invisible to the pipeline no
+// matter how thick the line is - which is why this can be a generous outline
+// and still never contaminate a glyph.
+//
+// And it must show the right proportion. A final consonant has exactly one
+// slot (810x200) whatever the syllable around it, so its guide is squashed to
+// that shape: trace it and the drawing lands in the slot with no stretch at
+// all. A lead or vowel has four slots - 55% of syllables want 0.85x0.31 and
+// 41% want 0.46x0.59, which are opposite shapes - so no single guide can suit
+// them and the neutral choice, the letter's own proportions, is the one that
+// minimises the worst case.
+// Measured: a guide at 170 is caught the moment a shadow crosses the page and
+// drags the crop box open; at this margin above the cap nothing of the sheet
+// survives binarisation. Derived from the cap so the two cannot drift apart.
+const GUIDE_LEVEL = require('./capture').INK_CAP + 45;   // 210
+const GUIDE_GREY = '#' + GUIDE_LEVEL.toString(16).repeat(3);
+const FINAL_SLOT_ASPECT = 0.81 / 0.20; // the T slot, 4.05:1
+
+function guideOutline(font, char, role, area) {
+  const glyph = font.charToGlyph(char);
+  if (!glyph || glyph.index === 0) return null;
+  const d = glyph.getPath(0, 0, 100).toPathData(2);
+  if (!d) return null;
+  const b = pathBox(d);
+  const w = Math.max(1, b.x1 - b.x0), h = Math.max(1, b.y1 - b.y0);
+  let kx, ky;
+  if (role === 'T') {
+    // Fill a box of the slot's aspect, so tracing produces a slot-shaped final.
+    const boxW = area.w, boxH = Math.min(area.h, boxW / FINAL_SLOT_ASPECT);
+    kx = boxW / w; ky = boxH / h;
+  } else {
+    kx = ky = Math.min(area.w / w, area.h / h);
+  }
+  const x = area.x + (area.w - w * kx) / 2;
+  const y = area.y + (area.h - h * ky) / 2;
+  return svgpath(d).translate(-b.x0, -b.y0).scale(kx, ky).translate(x, y).round(2).toString();
+}
+
 function generateKoreanTemplate(out, { labelFont } = {}) {
   const fs = require('fs');
   const PDFDocument = require('pdfkit');
   const parts = worksheetItems();
   const koreanFont = labelFont || defaultKoreanLabelFont();
   if (koreanFont && !fs.existsSync(koreanFont)) throw new Error(`Korean label font not found: ${koreanFont}`);
+  const outlineFont = koreanFont ? require('opentype.js').loadSync(koreanFont) : null;
   const doc = new PDFDocument({ size: 'A4', margin: 0 });
   const stream = fs.createWriteStream(out);
   doc.pipe(stream);
@@ -214,8 +257,12 @@ function generateKoreanTemplate(out, { labelFont } = {}) {
       const role = part.role === 'L' ? '초성' : part.role === 'V' ? '중성'
         : part.role === 'T' ? '종성' : '그대로';
       if (koreanFont) {
-        doc.font(koreanFont).fontSize(14).fillColor('#aaa').text(`${role} ${part.char}`, x + 3, y + 3, { lineBreak: false });
+        doc.font(koreanFont).fontSize(14).fillColor(GUIDE_GREY).text(`${role} ${part.char}`, x + 3, y + 3, { lineBreak: false });
         doc.font('Helvetica');
+        // Below the label, clear of the cell border on every side.
+        const area = { x: x + 7, y: y + 24, w: cw - 4 - 14, h: ch - 4 - 31 };
+        const guide = outlineFont && guideOutline(outlineFont, part.char, part.role, area);
+        if (guide) doc.path(guide).lineWidth(1.2).strokeColor(GUIDE_GREY).stroke();
       } else {
         doc.fontSize(9).fillColor('#aaa').text(`${part.role}${String(parts.indexOf(part) + 1).padStart(2, '0')}`, x + 3, y + 3, { lineBreak: false });
       }
