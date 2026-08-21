@@ -181,46 +181,31 @@ function defaultKoreanLabelFont() {
   return candidates.find((file) => fs.existsSync(file));
 }
 
-// The faint guide drawn inside each worksheet cell.
+// What the worksheet may print inside a cell.
 //
-// Two rules, both measured rather than guessed. It must be lighter than the
-// capture threshold: `binarize` only calls a pixel ink when it is below
-// cap=165, so anything printed above that is invisible to the pipeline no
-// matter how thick the line is - which is why this can be a generous outline
-// and still never contaminate a glyph.
+// Not the letter. A printed letterform is traced, and a font traced from a
+// gothic face is that face in a shaky hand - the opposite of the point. What
+// the reader cannot know on their own is the *proportion* a final consonant
+// needs, so only that is drawn, and only as an empty box: a box has no shape
+// to copy.
 //
-// And it must show the right proportion. A final consonant has exactly one
-// slot (810x200) whatever the syllable around it, so its guide is squashed to
-// that shape: trace it and the drawing lands in the slot with no stretch at
-// all. A lead or vowel has four slots - 55% of syllables want 0.85x0.31 and
-// 41% want 0.46x0.59, which are opposite shapes - so no single guide can suit
-// them and the neutral choice, the letter's own proportions, is the one that
-// minimises the worst case.
-// Measured: a guide at 170 is caught the moment a shadow crosses the page and
-// drags the crop box open; at this margin above the cap nothing of the sheet
-// survives binarisation. Derived from the cap so the two cannot drift apart.
+// Finals are the only jamo with a single slot - 810x200 whatever the syllable
+// around them - so the box can state it exactly. Write inside it and the final
+// lands with no stretching. Leads and vowels have four slots, and the two that
+// carry 96% of syllables are opposite shapes (0.85x0.31 and 0.46x0.59), so
+// there is no proportion to advise and their cells stay empty.
+//
+// Measured: a guide at 170 is captured the moment a shadow crosses the page,
+// which drags the crop box open and shrinks the glyph inside it. Derived from
+// the binariser's cap so the two cannot drift apart.
 const GUIDE_LEVEL = require('./capture').INK_CAP + 45;   // 210
 const GUIDE_GREY = '#' + GUIDE_LEVEL.toString(16).repeat(3);
-const FINAL_SLOT_ASPECT = 0.81 / 0.20; // the T slot, 4.05:1
+const FINAL_SLOT_ASPECT = 0.81 / 0.20;                   // the T slot, 4.05:1
 
-function guideOutline(font, char, role, area) {
-  const glyph = font.charToGlyph(char);
-  if (!glyph || glyph.index === 0) return null;
-  const d = glyph.getPath(0, 0, 100).toPathData(2);
-  if (!d) return null;
-  const b = pathBox(d);
-  const w = Math.max(1, b.x1 - b.x0), h = Math.max(1, b.y1 - b.y0);
-  let kx, ky;
-  if (role === 'T') {
-    // Fill a box of the slot's aspect, so tracing produces a slot-shaped final.
-    const boxW = area.w, boxH = Math.min(area.h, boxW / FINAL_SLOT_ASPECT);
-    kx = boxW / w; ky = boxH / h;
-  } else {
-    kx = ky = Math.min(area.w / w, area.h / h);
-  }
-  const x = area.x + (area.w - w * kx) / 2;
-  const y = area.y + (area.h - h * ky) / 2;
-  return svgpath(d).translate(-b.x0, -b.y0).scale(kx, ky).translate(x, y).round(2).toString();
+function finalGuideBox(area) {
+  const w = area.w;
+  const h = Math.min(area.h, w / FINAL_SLOT_ASPECT);
+  return { x: area.x, y: area.y + (area.h - h) / 2, w, h };
 }
 
 function generateKoreanTemplate(out, { labelFont } = {}) {
@@ -229,7 +214,6 @@ function generateKoreanTemplate(out, { labelFont } = {}) {
   const parts = worksheetItems();
   const koreanFont = labelFont || defaultKoreanLabelFont();
   if (koreanFont && !fs.existsSync(koreanFont)) throw new Error(`Korean label font not found: ${koreanFont}`);
-  const outlineFont = koreanFont ? require('opentype.js').loadSync(koreanFont) : null;
   const doc = new PDFDocument({ size: 'A4', margin: 0 });
   const stream = fs.createWriteStream(out);
   doc.pipe(stream);
@@ -245,7 +229,7 @@ function generateKoreanTemplate(out, { labelFont } = {}) {
     doc.fontSize(14).fillColor('#999').text(`kor-your-font 한글 자모 - ${page + 1}쪽 / ${Math.ceil(parts.length / perPage)}쪽`, TEMPLATE.margin, TEMPLATE.margin, { lineBreak: false });
     doc.fontSize(8).fillColor('#aaa').text(
       koreanFont
-        ? '각 칸에 표시된 자모를 칸 가득 크게, 가운데에 하나씩 쓰세요. 칸 선에 닿지 않게 하고, 다 쓰면 페이지 전체를 위에서 똑바로 찍으세요.'
+        ? '각 칸에 적힌 자모를 칸 가득 크게, 가운데에 하나씩 평소 글씨체로 쓰세요. 종성 칸의 점선 상자는 받침이 들어갈 자리입니다 - 그 납작한 비율에 맞춰 쓰면 받침이 눌리지 않습니다. 칸 선에 닿지 않게 하고, 다 쓰면 페이지 전체를 위에서 똑바로 찍으세요.'
         : 'Open the accompanying -map.txt file. Write the indicated jamo large in each cell. Photograph the full page from above.',
       TEMPLATE.margin, TEMPLATE.margin + 22, { width: gridW }
     );
@@ -259,10 +243,12 @@ function generateKoreanTemplate(out, { labelFont } = {}) {
       if (koreanFont) {
         doc.font(koreanFont).fontSize(14).fillColor(GUIDE_GREY).text(`${role} ${part.char}`, x + 3, y + 3, { lineBreak: false });
         doc.font('Helvetica');
-        // Below the label, clear of the cell border on every side.
-        const area = { x: x + 7, y: y + 24, w: cw - 4 - 14, h: ch - 4 - 31 };
-        const guide = outlineFont && guideOutline(outlineFont, part.char, part.role, area);
-        if (guide) doc.path(guide).lineWidth(1.2).strokeColor(GUIDE_GREY).stroke();
+        if (part.role === 'T') {
+          // Dashed, so it reads as somewhere to write rather than as a border.
+          const b = finalGuideBox({ x: x + 7, y: y + 24, w: cw - 4 - 14, h: ch - 4 - 31 });
+          doc.save().dash(3, { space: 3 })
+            .rect(b.x, b.y, b.w, b.h).lineWidth(1).stroke(GUIDE_GREY).restore();
+        }
       } else {
         doc.fontSize(9).fillColor('#aaa').text(`${part.role}${String(parts.indexOf(part) + 1).padStart(2, '0')}`, x + 3, y + 3, { lineBreak: false });
       }
